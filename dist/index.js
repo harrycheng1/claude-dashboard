@@ -287,7 +287,8 @@ async function saveFileCache(tokenHash, data) {
         timestamp: Date.now()
       })
     );
-    cleanupExpiredCache();
+    cleanupExpiredCache().catch(() => {
+    });
   } catch {
   }
 }

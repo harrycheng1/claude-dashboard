@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdir, writeFile, readFile, rm } from 'fs/promises';
+import { mkdir, writeFile, readFile, rm, readdir, stat, utimes } from 'fs/promises';
 import path from 'path';
 import os from 'os';
+
+const ACTUAL_CACHE_DIR = path.join(os.homedir(), '.cache', 'claude-dashboard');
 
 // Mock credentials module
 vi.mock('../utils/credentials.js', () => ({
@@ -121,6 +123,92 @@ describe('api-client', () => {
       const result = await fetchUsageLimits();
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('file cache integration', () => {
+    const TEST_TOKEN = 'integration-test-token-' + Date.now();
+
+    it('should persist cache to disk and load on subsequent calls', async () => {
+      const { getCredentials } = await import('../utils/credentials.js');
+      vi.mocked(getCredentials).mockResolvedValue(TEST_TOKEN);
+
+      const mockLimits = {
+        five_hour: { used: 50, limit: 500, remaining: 450, reset_at: '2024-01-01T00:00:00Z' },
+        seven_day: null,
+        seven_day_sonnet: null,
+      };
+
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockLimits),
+      });
+      global.fetch = fetchMock;
+
+      const { fetchUsageLimits, clearCache } = await import('../utils/api-client.js');
+      clearCache();
+
+      // First call - fetches from API and writes to disk
+      const result1 = await fetchUsageLimits();
+      expect(result1).not.toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // Verify file was created
+      const files = await readdir(ACTUAL_CACHE_DIR);
+      const cacheFiles = files.filter((f) => f.startsWith('cache-') && f.endsWith('.json'));
+      expect(cacheFiles.length).toBeGreaterThan(0);
+
+      // Clear in-memory cache to force file cache read
+      clearCache();
+
+      // Second call - should load from file cache, not API
+      const result2 = await fetchUsageLimits();
+      expect(result2).toEqual(result1);
+      expect(fetchMock).toHaveBeenCalledTimes(1); // Still 1
+    });
+
+    it('should cleanup expired cache files', async () => {
+      // Create an old cache file manually
+      await mkdir(ACTUAL_CACHE_DIR, { recursive: true, mode: 0o700 });
+      const oldCacheFile = path.join(ACTUAL_CACHE_DIR, 'cache-cleanup-test-old.json');
+      await writeFile(
+        oldCacheFile,
+        JSON.stringify({ data: { five_hour: null, seven_day: null, seven_day_sonnet: null }, timestamp: Date.now() })
+      );
+
+      // Set file mtime to 2 hours ago (older than CACHE_MAX_AGE_SECONDS = 3600)
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      await utimes(oldCacheFile, twoHoursAgo, twoHoursAgo);
+
+      // Verify old file exists
+      const filesBefore = await readdir(ACTUAL_CACHE_DIR);
+      expect(filesBefore).toContain('cache-cleanup-test-old.json');
+
+      // Trigger cleanup by making multiple API calls (10% probability)
+      const { getCredentials } = await import('../utils/credentials.js');
+      vi.mocked(getCredentials).mockResolvedValue('cleanup-trigger-token-' + Date.now());
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({ five_hour: null, seven_day: null, seven_day_sonnet: null }),
+      });
+
+      const { fetchUsageLimits, clearCache } = await import('../utils/api-client.js');
+
+      // Run multiple times to increase chance of cleanup running (10% probability)
+      for (let i = 0; i < 30; i++) {
+        clearCache();
+        vi.mocked(getCredentials).mockResolvedValue(`cleanup-trigger-token-${Date.now()}-${i}`);
+        await fetchUsageLimits();
+      }
+
+      // Give async cleanup time to complete
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Check if old file was cleaned up
+      const filesAfter = await readdir(ACTUAL_CACHE_DIR);
+      expect(filesAfter).not.toContain('cache-cleanup-test-old.json');
     });
   });
 });

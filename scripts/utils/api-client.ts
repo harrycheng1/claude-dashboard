@@ -189,8 +189,8 @@ async function saveFileCache(tokenHash: string, data: UsageLimits): Promise<void
       })
     );
 
-    // Probabilistically clean up old cache files
-    cleanupExpiredCache();
+    // Probabilistically clean up old cache files (fire-and-forget)
+    cleanupExpiredCache().catch(() => {});
   } catch {
     // Ignore cache write errors
   }
