@@ -1,4 +1,4 @@
-import fs from 'fs';
+import { readFile, writeFile, mkdir } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import type { UsageLimits, CacheEntry } from '../types.js';
@@ -28,9 +28,11 @@ let lastTokenHash: string | null = null;
 /**
  * Ensure cache directory exists with secure permissions
  */
-function ensureCacheDir(): void {
-  if (!fs.existsSync(CACHE_DIR)) {
-    fs.mkdirSync(CACHE_DIR, { recursive: true, mode: 0o700 });
+async function ensureCacheDir(): Promise<void> {
+  try {
+    await mkdir(CACHE_DIR, { recursive: true, mode: 0o700 });
+  } catch {
+    // Directory may already exist or creation failed
   }
 }
 
@@ -156,9 +158,8 @@ async function fetchFromApi(token: string, tokenHash: string): Promise<UsageLimi
 async function loadFileCache(tokenHash: string, ttlSeconds: number): Promise<UsageLimits | null> {
   try {
     const cacheFile = getCacheFilePath(tokenHash);
-    if (!fs.existsSync(cacheFile)) return null;
-
-    const content = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
+    const raw = await readFile(cacheFile, 'utf-8');
+    const content = JSON.parse(raw);
     const ageSeconds = (Date.now() - content.timestamp) / 1000;
 
     if (ageSeconds < ttlSeconds) {
@@ -166,6 +167,7 @@ async function loadFileCache(tokenHash: string, ttlSeconds: number): Promise<Usa
     }
     return null;
   } catch {
+    // File doesn't exist or parse failed
     return null;
   }
 }
@@ -175,9 +177,9 @@ async function loadFileCache(tokenHash: string, ttlSeconds: number): Promise<Usa
  */
 async function saveFileCache(tokenHash: string, data: UsageLimits): Promise<void> {
   try {
-    ensureCacheDir();
+    await ensureCacheDir();
     const cacheFile = getCacheFilePath(tokenHash);
-    fs.writeFileSync(
+    await writeFile(
       cacheFile,
       JSON.stringify({
         data,

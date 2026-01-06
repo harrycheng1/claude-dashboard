@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // scripts/statusline.ts
-import { readFile as readFile2 } from "fs/promises";
+import { readFile as readFile3 } from "fs/promises";
 import { join as join2 } from "path";
 import { homedir as homedir2 } from "os";
 
@@ -116,7 +116,7 @@ function renderProgressBar(percent, config = DEFAULT_PROGRESS_BAR_CONFIG) {
 }
 
 // scripts/utils/api-client.ts
-import fs from "fs";
+import { readFile as readFile2, writeFile, mkdir } from "fs/promises";
 import os from "os";
 import path from "path";
 
@@ -175,9 +175,10 @@ var CACHE_DIR = path.join(os.homedir(), ".cache", "claude-dashboard");
 var usageCacheMap = /* @__PURE__ */ new Map();
 var pendingRequests = /* @__PURE__ */ new Map();
 var lastTokenHash = null;
-function ensureCacheDir() {
-  if (!fs.existsSync(CACHE_DIR)) {
-    fs.mkdirSync(CACHE_DIR, { recursive: true, mode: 448 });
+async function ensureCacheDir() {
+  try {
+    await mkdir(CACHE_DIR, { recursive: true, mode: 448 });
+  } catch {
   }
 }
 function getCacheFilePath(tokenHash) {
@@ -262,9 +263,8 @@ async function fetchFromApi(token, tokenHash) {
 async function loadFileCache(tokenHash, ttlSeconds) {
   try {
     const cacheFile = getCacheFilePath(tokenHash);
-    if (!fs.existsSync(cacheFile))
-      return null;
-    const content = JSON.parse(fs.readFileSync(cacheFile, "utf-8"));
+    const raw = await readFile2(cacheFile, "utf-8");
+    const content = JSON.parse(raw);
     const ageSeconds = (Date.now() - content.timestamp) / 1e3;
     if (ageSeconds < ttlSeconds) {
       return content.data;
@@ -276,9 +276,9 @@ async function loadFileCache(tokenHash, ttlSeconds) {
 }
 async function saveFileCache(tokenHash, data) {
   try {
-    ensureCacheDir();
+    await ensureCacheDir();
     const cacheFile = getCacheFilePath(tokenHash);
-    fs.writeFileSync(
+    await writeFile(
       cacheFile,
       JSON.stringify({
         data,
@@ -372,7 +372,7 @@ async function readStdin() {
 }
 async function loadConfig() {
   try {
-    const content = await readFile2(CONFIG_PATH, "utf-8");
+    const content = await readFile3(CONFIG_PATH, "utf-8");
     const userConfig = JSON.parse(content);
     return { ...DEFAULT_CONFIG, ...userConfig };
   } catch {
