@@ -648,18 +648,25 @@ async function countClaudeMd(projectDir) {
   return count;
 }
 async function countMcps(projectDir) {
-  const mcpPath = join2(projectDir, ".claude", "mcp.json");
-  if (await pathExists(mcpPath)) {
-    try {
-      const { readFile: readFile6 } = await import("fs/promises");
-      const content = await readFile6(mcpPath, "utf-8");
-      const config = JSON.parse(content);
-      return Object.keys(config.mcpServers || {}).length;
-    } catch {
-      return 0;
+  const { readFile: readFile6 } = await import("fs/promises");
+  const homeDir = process.env.HOME || "";
+  const mcpPaths = [
+    { path: join2(projectDir, ".claude", "mcp.json"), key: "mcpServers" },
+    { path: join2(homeDir, ".claude.json"), key: "mcpServers" },
+    { path: join2(homeDir, ".config", "claude-code", "mcp.json"), key: "mcpServers" }
+  ];
+  let totalCount = 0;
+  for (const { path: path2, key } of mcpPaths) {
+    if (await pathExists(path2)) {
+      try {
+        const content = await readFile6(path2, "utf-8");
+        const config = JSON.parse(content);
+        totalCount += Object.keys(config[key] || {}).length;
+      } catch {
+      }
     }
   }
-  return 0;
+  return totalCount;
 }
 var configCountsWidget = {
   id: "configCounts",
@@ -780,10 +787,10 @@ async function parseTranscript(transcriptPath) {
           }
         }
       }
-      if (entry.type === "tool_result" && entry.message?.content) {
+      if (entry.type === "user" && entry.message?.content) {
         for (const block of entry.message.content) {
-          if (block.type === "tool_result" && block.id) {
-            toolResults.add(block.id);
+          if (block.type === "tool_result" && block.tool_use_id) {
+            toolResults.add(block.tool_use_id);
           }
         }
       }
@@ -958,15 +965,12 @@ var todoProgressWidget = {
       return null;
     }
     const progress = extractTodoProgress(transcript);
-    if (!progress) {
-      return null;
-    }
-    return progress;
+    return progress || { total: 0, completed: 0, current: null };
   },
   render(data, ctx) {
     const { translations: t } = ctx;
     if (data.total === 0) {
-      return "";
+      return colorize(`${t.widgets.todos}: -`, COLORS.dim);
     }
     const percent = calculatePercent(data.completed, data.total);
     const color = getColorForPercent(100 - percent);
@@ -1082,7 +1086,7 @@ async function loadConfig() {
       ...userConfig
     };
     if (!config.displayMode) {
-      config.displayMode = "normal";
+      config.displayMode = "compact";
     }
     return config;
   } catch {
