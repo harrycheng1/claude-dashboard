@@ -16,8 +16,8 @@ Configure the claude-dashboard status line plugin with widget system support.
 ### Direct Mode Arguments
 
 - `$1`: Display mode
-  - `compact`: 1 line (model, context, cost, rate limits)
-  - `normal` (default): 2 lines (+ project info, session, tools, todos)
+  - `compact` (default): 1 line (model, context, cost, rate limits)
+  - `normal`: 2 lines (+ project info, session, tools, todos)
   - `detailed`: 3 lines (+ config counts, agent status)
   - `custom`: Custom widget configuration (requires `$4`)
 

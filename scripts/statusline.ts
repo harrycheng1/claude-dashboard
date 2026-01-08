@@ -50,7 +50,7 @@ async function loadConfig(): Promise<Config> {
 
     // Ensure displayMode exists (backward compatibility)
     if (!config.displayMode) {
-      config.displayMode = 'normal';
+      config.displayMode = 'compact';
     }
 
     return config;
