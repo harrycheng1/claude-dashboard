@@ -1,6 +1,13 @@
 # claude-dashboard
 
+![License](https://img.shields.io/github/license/uppinote20/claude-dashboard)
+![Stars](https://img.shields.io/github/stars/uppinote20/claude-dashboard)
+
 Comprehensive status line plugin for Claude Code with context usage, API rate limits, cost tracking, and modular widget system.
+
+## Demo
+
+![Demo](demo.gif)
 
 ## Features
 
@@ -25,29 +32,18 @@ Comprehensive status line plugin for Claude Code with context usage, API rate li
 ## Output Examples
 
 **Compact (1 line) - Default:**
-```
-🤖 Opus │ ████████░░ 80% │ 160K/200K │ $1.25 │ 5h: 42% (2h30m) │ 7d: 69% │ 7d-S: 2%
-```
+
+![Compact](images/compact.png)
 
 **Normal (2 lines):**
-```
-🤖 Opus │ ████████░░ 80% │ 160K/200K │ $1.25 │ 5h: 42% (2h30m) │ 7d: 69% │ 7d-S: 2%
-📁 project (main*) │ ⏱ 45m │ ✓ 3/5
-```
-> `*` indicates uncommitted changes in git
+
+![Normal](images/normal.png)
 
 **Detailed (3 lines):**
-```
-🤖 Opus │ ████████░░ 80% │ 160K/200K │ $1.25 │ 5h: 42% (2h30m) │ 7d: 69% │ 7d-S: 2%
-📁 project (main) │ ⏱ 45m │ ✓ 3/5
-CLAUDE.md: 2 │ ⚙️ 12 done │ 🤖 Agent: 1
-```
 
-**Korean:**
-```
-🤖 Opus │ ████████░░ 80% │ 160K/200K │ $1.25 │ 5시간: 42% (2시간30분) │ 7일: 69% │ 7일-S: 2%
-📁 project (main) │ ⏱ 45분 │ 할일: 3/5
-```
+![Detailed](images/detailed.png)
+
+> `*` after branch name indicates uncommitted changes in git
 
 ## Installation
 
