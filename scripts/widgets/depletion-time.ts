@@ -27,6 +27,9 @@ export const depletionTimeWidget: Widget<DepletionTimeData> = {
     if (utilizationPerMinute < MIN_UTILIZATION_RATE) return null;
 
     const minutesToLimit = (100 - utilization) / utilizationPerMinute;
+
+    // Guard against invalid values
+    if (!Number.isFinite(minutesToLimit) || minutesToLimit < 0) return null;
     if (minutesToLimit > MAX_DISPLAY_MINUTES) return null;
 
     return {

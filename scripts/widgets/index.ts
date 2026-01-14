@@ -11,6 +11,7 @@ import type {
   DisplayMode,
 } from '../types.js';
 import { COLORS, RESET } from '../utils/colors.js';
+import { debugLog } from '../utils/debug.js';
 
 // Widget imports
 import { modelWidget } from './model.js';
@@ -109,8 +110,9 @@ async function renderWidget(
 
     const output = widget.render(data, ctx);
     return { id: widgetId, output };
-  } catch {
-    // Graceful degradation - skip failed widgets
+  } catch (error) {
+    // Graceful degradation - skip failed widgets, but log for debugging
+    debugLog('widget', `Widget '${widgetId}' failed`, error);
     return null;
   }
 }

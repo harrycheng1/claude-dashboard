@@ -365,6 +365,20 @@ function getTranslations(config) {
   return LOCALES[lang] || LOCALES.en;
 }
 
+// scripts/utils/debug.ts
+var DEBUG = process.env.DEBUG === "claude-dashboard" || process.env.DEBUG === "1" || process.env.DEBUG === "true";
+function debugLog(context, message, error) {
+  if (!DEBUG)
+    return;
+  const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+  const prefix = `[claude-dashboard:${context}]`;
+  if (error) {
+    console.error(`${timestamp} ${prefix} ${message}`, error);
+  } else {
+    console.log(`${timestamp} ${prefix} ${message}`);
+  }
+}
+
 // scripts/utils/formatters.ts
 function formatTokens(tokens) {
   if (tokens >= 1e6) {
@@ -738,17 +752,28 @@ import { homedir as homedir2 } from "os";
 var SESSION_DIR = join3(homedir2(), ".cache", "claude-dashboard", "sessions");
 async function getSessionStartTime(sessionId) {
   const sessionFile = join3(SESSION_DIR, `${sessionId}.json`);
-  const content = await readFile3(sessionFile, "utf-8").catch(() => null);
-  if (content) {
+  try {
+    const content = await readFile3(sessionFile, "utf-8");
     const data = JSON.parse(content);
+    if (typeof data.startTime !== "number") {
+      debugLog("session", `Invalid session file format for ${sessionId}`);
+      throw new Error("Invalid session file format");
+    }
     return data.startTime;
+  } catch (error) {
+    const isNotFound = error instanceof Error && "code" in error && error.code === "ENOENT";
+    if (!isNotFound) {
+      debugLog("session", `Failed to read session ${sessionId}`, error);
+    }
+    const startTime = Date.now();
+    try {
+      await mkdir2(SESSION_DIR, { recursive: true });
+      await writeFile2(sessionFile, JSON.stringify({ startTime }), "utf-8");
+    } catch (writeError) {
+      debugLog("session", `Failed to persist session ${sessionId}`, writeError);
+    }
+    return startTime;
   }
-  const startTime = Date.now();
-  await mkdir2(SESSION_DIR, { recursive: true }).catch(() => {
-  });
-  await writeFile2(sessionFile, JSON.stringify({ startTime }), "utf-8").catch(() => {
-  });
-  return startTime;
 }
 async function getSessionElapsedMs(sessionId) {
   const startTime = await getSessionStartTime(sessionId);
@@ -1033,6 +1058,9 @@ var burnRateWidget = {
       return null;
     const totalTokens = usage.input_tokens + usage.output_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens;
     const tokensPerMinute = totalTokens / elapsedMinutes;
+    if (!Number.isFinite(tokensPerMinute) || tokensPerMinute < 0) {
+      return null;
+    }
     return { tokensPerMinute };
   },
   render(data) {
@@ -1057,6 +1085,8 @@ var depletionTimeWidget = {
     if (utilizationPerMinute < MIN_UTILIZATION_RATE)
       return null;
     const minutesToLimit = (100 - utilization) / utilizationPerMinute;
+    if (!Number.isFinite(minutesToLimit) || minutesToLimit < 0)
+      return null;
     if (minutesToLimit > MAX_DISPLAY_MINUTES)
       return null;
     return {
@@ -1145,7 +1175,8 @@ async function renderWidget(widgetId, ctx) {
     }
     const output = widget.render(data, ctx);
     return { id: widgetId, output };
-  } catch {
+  } catch (error) {
+    debugLog("widget", `Widget '${widgetId}' failed`, error);
     return null;
   }
 }

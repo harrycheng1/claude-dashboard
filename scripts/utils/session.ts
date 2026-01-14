@@ -6,6 +6,7 @@ import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 import type { WidgetContext } from '../types.js';
+import { debugLog } from './debug.js';
 
 const SESSION_DIR = join(homedir(), '.cache', 'claude-dashboard', 'sessions');
 
@@ -15,16 +16,41 @@ const SESSION_DIR = join(homedir(), '.cache', 'claude-dashboard', 'sessions');
 export async function getSessionStartTime(sessionId: string): Promise<number> {
   const sessionFile = join(SESSION_DIR, `${sessionId}.json`);
 
-  const content = await readFile(sessionFile, 'utf-8').catch(() => null);
-  if (content) {
+  try {
+    const content = await readFile(sessionFile, 'utf-8');
     const data = JSON.parse(content);
-    return data.startTime;
-  }
 
-  const startTime = Date.now();
-  await mkdir(SESSION_DIR, { recursive: true }).catch(() => {});
-  await writeFile(sessionFile, JSON.stringify({ startTime }), 'utf-8').catch(() => {});
-  return startTime;
+    if (typeof data.startTime !== 'number') {
+      debugLog('session', `Invalid session file format for ${sessionId}`);
+      throw new Error('Invalid session file format');
+    }
+
+    return data.startTime;
+  } catch (error: unknown) {
+    // Check if file simply doesn't exist (expected case)
+    const isNotFound =
+      error instanceof Error &&
+      'code' in error &&
+      (error as NodeJS.ErrnoException).code === 'ENOENT';
+
+    if (!isNotFound) {
+      // Unexpected error - log for debugging
+      debugLog('session', `Failed to read session ${sessionId}`, error);
+    }
+
+    // Create new session
+    const startTime = Date.now();
+
+    try {
+      await mkdir(SESSION_DIR, { recursive: true });
+      await writeFile(sessionFile, JSON.stringify({ startTime }), 'utf-8');
+    } catch (writeError) {
+      debugLog('session', `Failed to persist session ${sessionId}`, writeError);
+      // Continue with in-memory start time - widget will still work for current process
+    }
+
+    return startTime;
+  }
 }
 
 /**

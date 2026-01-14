@@ -26,6 +26,11 @@ export const burnRateWidget: Widget<BurnRateData> = {
 
     const tokensPerMinute = totalTokens / elapsedMinutes;
 
+    // Guard against invalid values
+    if (!Number.isFinite(tokensPerMinute) || tokensPerMinute < 0) {
+      return null;
+    }
+
     return { tokensPerMinute };
   },
 
