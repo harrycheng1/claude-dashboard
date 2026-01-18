@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // scripts/statusline.ts
-import { readFile as readFile5 } from "fs/promises";
+import { readFile as readFile5, stat as stat4 } from "fs/promises";
 import { join as join4 } from "path";
 import { homedir as homedir3 } from "os";
 
@@ -65,15 +65,17 @@ function colorize(text, color) {
 }
 
 // scripts/utils/api-client.ts
-import { readFile as readFile2, writeFile, mkdir, readdir, stat, unlink } from "fs/promises";
+import { readFile as readFile2, writeFile, mkdir, readdir, stat as stat2, unlink } from "fs/promises";
 import os from "os";
 import path from "path";
 
 // scripts/utils/credentials.ts
 import { execFileSync } from "child_process";
-import { readFile } from "fs/promises";
+import { readFile, stat } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
+var KEYCHAIN_CACHE_TTL_MS = 1e4;
+var credentialsCache = null;
 async function getCredentials() {
   try {
     if (process.platform === "darwin") {
@@ -85,6 +87,9 @@ async function getCredentials() {
   }
 }
 async function getCredentialsFromKeychain() {
+  if (credentialsCache?.timestamp && Date.now() - credentialsCache.timestamp < KEYCHAIN_CACHE_TTL_MS) {
+    return credentialsCache.token;
+  }
   try {
     const result = execFileSync(
       "security",
@@ -92,7 +97,9 @@ async function getCredentialsFromKeychain() {
       { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
     ).trim();
     const creds = JSON.parse(result);
-    return creds?.claudeAiOauth?.accessToken ?? null;
+    const token = creds?.claudeAiOauth?.accessToken ?? null;
+    credentialsCache = { token, timestamp: Date.now() };
+    return token;
   } catch {
     return await getCredentialsFromFile();
   }
@@ -100,9 +107,16 @@ async function getCredentialsFromKeychain() {
 async function getCredentialsFromFile() {
   try {
     const credPath = join(homedir(), ".claude", ".credentials.json");
+    const fileStat = await stat(credPath);
+    const mtime = fileStat.mtimeMs;
+    if (credentialsCache?.mtime === mtime) {
+      return credentialsCache.token;
+    }
     const content = await readFile(credPath, "utf-8");
     const creds = JSON.parse(content);
-    return creds?.claudeAiOauth?.accessToken ?? null;
+    const token = creds?.claudeAiOauth?.accessToken ?? null;
+    credentialsCache = { token, mtime };
+    return token;
   } catch {
     return null;
   }
@@ -257,7 +271,7 @@ async function cleanupExpiredCache() {
       }
       const filePath = path.join(CACHE_DIR, file);
       try {
-        const fileStat = await stat(filePath);
+        const fileStat = await stat2(filePath);
         const ageSeconds = (now - fileStat.mtimeMs) / 1e3;
         if (ageSeconds > CACHE_MAX_AGE_SECONDS) {
           await unlink(filePath);
@@ -663,6 +677,8 @@ var projectInfoWidget = {
 import { readdir as readdir2, access } from "fs/promises";
 import { join as join2 } from "path";
 import { constants } from "fs";
+var CONFIG_CACHE_TTL_MS = 3e4;
+var configCountsCache = null;
 async function pathExists(path2) {
   try {
     await access(path2, constants.F_OK);
@@ -721,6 +737,9 @@ var configCountsWidget = {
     if (!currentDir) {
       return null;
     }
+    if (configCountsCache?.projectDir === currentDir && Date.now() - configCountsCache.timestamp < CONFIG_CACHE_TTL_MS) {
+      return configCountsCache.data;
+    }
     const claudeDir = join2(currentDir, ".claude");
     const [claudeMd, rules, mcps, hooks] = await Promise.all([
       countClaudeMd(currentDir),
@@ -728,10 +747,9 @@ var configCountsWidget = {
       countMcps(currentDir),
       countFiles(join2(claudeDir, "hooks"))
     ]);
-    if (claudeMd === 0 && rules === 0 && mcps === 0 && hooks === 0) {
-      return null;
-    }
-    return { claudeMd, rules, mcps, hooks };
+    const data = claudeMd === 0 && rules === 0 && mcps === 0 && hooks === 0 ? null : { claudeMd, rules, mcps, hooks };
+    configCountsCache = { projectDir: currentDir, data, timestamp: Date.now() };
+    return data;
   },
   render(data, ctx) {
     const { translations: t } = ctx;
@@ -857,7 +875,7 @@ var sessionDurationWidget = {
 };
 
 // scripts/utils/transcript-parser.ts
-import { readFile as readFile4, stat as stat2 } from "fs/promises";
+import { readFile as readFile4, stat as stat3 } from "fs/promises";
 var cachedTranscript = null;
 function parseJsonlLine(line) {
   try {
@@ -868,7 +886,7 @@ function parseJsonlLine(line) {
 }
 async function parseTranscript(transcriptPath) {
   try {
-    const fileStat = await stat2(transcriptPath);
+    const fileStat = await stat3(transcriptPath);
     const mtime = fileStat.mtimeMs;
     if (cachedTranscript?.path === transcriptPath && cachedTranscript.mtime === mtime) {
       return cachedTranscript.data;
@@ -1271,6 +1289,7 @@ async function formatOutput(ctx) {
 
 // scripts/statusline.ts
 var CONFIG_PATH = join4(homedir3(), ".claude", "claude-dashboard.local.json");
+var configCache = null;
 async function readStdin() {
   try {
     const chunks = [];
@@ -1285,6 +1304,11 @@ async function readStdin() {
 }
 async function loadConfig() {
   try {
+    const fileStat = await stat4(CONFIG_PATH);
+    const mtime = fileStat.mtimeMs;
+    if (configCache?.mtime === mtime) {
+      return configCache.config;
+    }
     const content = await readFile5(CONFIG_PATH, "utf-8");
     const userConfig = JSON.parse(content);
     const config = {
@@ -1294,6 +1318,7 @@ async function loadConfig() {
     if (!config.displayMode) {
       config.displayMode = "compact";
     }
+    configCache = { config, mtime };
     return config;
   } catch {
     return DEFAULT_CONFIG;
