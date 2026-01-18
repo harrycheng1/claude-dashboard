@@ -753,39 +753,78 @@ var configCountsWidget = {
 };
 
 // scripts/utils/session.ts
-import { readFile as readFile3, writeFile as writeFile2, mkdir as mkdir2 } from "fs/promises";
+import { readFile as readFile3, mkdir as mkdir2, open } from "fs/promises";
 import { join as join3 } from "path";
 import { homedir as homedir2 } from "os";
 var SESSION_DIR = join3(homedir2(), ".cache", "claude-dashboard", "sessions");
 var sessionCache = /* @__PURE__ */ new Map();
+var pendingRequests2 = /* @__PURE__ */ new Map();
+function sanitizeSessionId(sessionId) {
+  return sessionId.replace(/[^a-zA-Z0-9-_]/g, "");
+}
 async function getSessionStartTime(sessionId) {
-  if (sessionCache.has(sessionId)) {
-    return sessionCache.get(sessionId);
+  const safeSessionId = sanitizeSessionId(sessionId);
+  if (sessionCache.has(safeSessionId)) {
+    return sessionCache.get(safeSessionId);
   }
-  const sessionFile = join3(SESSION_DIR, `${sessionId}.json`);
+  const pending = pendingRequests2.get(safeSessionId);
+  if (pending) {
+    return pending;
+  }
+  const promise = getOrCreateSessionStartTimeImpl(safeSessionId);
+  pendingRequests2.set(safeSessionId, promise);
+  try {
+    return await promise;
+  } finally {
+    pendingRequests2.delete(safeSessionId);
+  }
+}
+async function getOrCreateSessionStartTimeImpl(safeSessionId) {
+  const sessionFile = join3(SESSION_DIR, `${safeSessionId}.json`);
   try {
     const content = await readFile3(sessionFile, "utf-8");
     const data = JSON.parse(content);
     if (typeof data.startTime !== "number") {
-      debugLog("session", `Invalid session file format for ${sessionId}`);
+      debugLog("session", `Invalid session file format for ${safeSessionId}`);
       throw new Error("Invalid session file format");
     }
-    sessionCache.set(sessionId, data.startTime);
+    sessionCache.set(safeSessionId, data.startTime);
     return data.startTime;
   } catch (error) {
     const isNotFound = error instanceof Error && "code" in error && error.code === "ENOENT";
     if (!isNotFound) {
-      debugLog("session", `Failed to read session ${sessionId}`, error);
+      debugLog("session", `Failed to read session ${safeSessionId}`, error);
     }
     const startTime = Date.now();
     try {
       await mkdir2(SESSION_DIR, { recursive: true });
-      await writeFile2(sessionFile, JSON.stringify({ startTime }), "utf-8");
+      const fileHandle = await open(sessionFile, "wx");
+      try {
+        await fileHandle.writeFile(JSON.stringify({ startTime }), "utf-8");
+      } finally {
+        await fileHandle.close();
+      }
+      sessionCache.set(safeSessionId, startTime);
+      return startTime;
     } catch (writeError) {
-      debugLog("session", `Failed to persist session ${sessionId}`, writeError);
+      const isExists = writeError instanceof Error && "code" in writeError && writeError.code === "EEXIST";
+      if (isExists) {
+        try {
+          const content = await readFile3(sessionFile, "utf-8");
+          const data = JSON.parse(content);
+          if (typeof data.startTime === "number") {
+            sessionCache.set(safeSessionId, data.startTime);
+            return data.startTime;
+          }
+        } catch {
+          debugLog("session", `Failed to read existing session ${safeSessionId} after EEXIST`);
+        }
+      } else {
+        debugLog("session", `Failed to persist session ${safeSessionId}`, writeError);
+      }
+      sessionCache.set(safeSessionId, startTime);
+      return startTime;
     }
-    sessionCache.set(sessionId, startTime);
-    return startTime;
   }
 }
 async function getSessionElapsedMs(sessionId) {
@@ -1064,7 +1103,13 @@ var burnRateWidget = {
   name: "Burn Rate",
   async getData(ctx) {
     const usage = ctx.stdin.context_window?.current_usage;
-    const elapsedMinutes = await getSessionElapsedMinutes(ctx, 0);
+    let elapsedMinutes;
+    try {
+      elapsedMinutes = await getSessionElapsedMinutes(ctx, 0);
+    } catch (error) {
+      debugLog("burnRate", "Failed to get session elapsed time", error);
+      return null;
+    }
     if (elapsedMinutes === null)
       return null;
     if (!usage || elapsedMinutes === 0) {
@@ -1133,7 +1178,7 @@ var cacheHitWidget = {
     if (total === 0) {
       return { hitPercentage: 0 };
     }
-    const hitPercentage = Math.round(cacheRead / total * 100);
+    const hitPercentage = Math.min(100, Math.max(0, Math.round(cacheRead / total * 100)));
     return { hitPercentage };
   },
   render(data) {

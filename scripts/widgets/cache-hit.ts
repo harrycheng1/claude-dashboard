@@ -28,7 +28,8 @@ export const cacheHitWidget: Widget<CacheHitData> = {
       return { hitPercentage: 0 };
     }
 
-    const hitPercentage = Math.round((cacheRead / total) * 100);
+    // Clamp to valid range [0, 100] to guard against floating point edge cases
+    const hitPercentage = Math.min(100, Math.max(0, Math.round((cacheRead / total) * 100)));
 
     return { hitPercentage };
   },

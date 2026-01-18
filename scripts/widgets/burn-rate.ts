@@ -6,6 +6,7 @@ import type { Widget } from './base.js';
 import type { WidgetContext, BurnRateData } from '../types.js';
 import { formatTokens } from '../utils/formatters.js';
 import { getSessionElapsedMinutes } from '../utils/session.js';
+import { debugLog } from '../utils/debug.js';
 
 export const burnRateWidget: Widget<BurnRateData> = {
   id: 'burnRate',
@@ -14,7 +15,13 @@ export const burnRateWidget: Widget<BurnRateData> = {
   async getData(ctx: WidgetContext): Promise<BurnRateData | null> {
     const usage = ctx.stdin.context_window?.current_usage;
 
-    const elapsedMinutes = await getSessionElapsedMinutes(ctx, 0);
+    let elapsedMinutes: number | null;
+    try {
+      elapsedMinutes = await getSessionElapsedMinutes(ctx, 0);
+    } catch (error) {
+      debugLog('burnRate', 'Failed to get session elapsed time', error);
+      return null;
+    }
     if (elapsedMinutes === null) return null;
 
     // Show 0/min at session start or when no usage data

@@ -8,7 +8,17 @@ import { COLORS, colorize } from '../utils/colors.js';
 import { formatDuration } from '../utils/formatters.js';
 import { getSessionElapsedMinutes } from '../utils/session.js';
 
+/**
+ * Maximum time to display depletion estimate (24 hours in minutes).
+ * Beyond this, estimates become unreliable due to rate limit window resets.
+ */
 const MAX_DISPLAY_MINUTES = 24 * 60;
+
+/**
+ * Minimum utilization rate threshold (0.01% per minute).
+ * Below this rate, estimated depletion time becomes extremely long (>160 hours)
+ * and is not useful to display.
+ */
 const MIN_UTILIZATION_RATE = 0.01;
 
 export const depletionTimeWidget: Widget<DepletionTimeData> = {
