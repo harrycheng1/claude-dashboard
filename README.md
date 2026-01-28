@@ -27,7 +27,7 @@ Comprehensive status line plugin for Claude Code with context usage, API rate li
 - ⏳ **Depletion Time**: Estimated time to rate limit
 - 🔷 **Codex Usage**: OpenAI Codex CLI usage (model, 5h/7d limits) - auto-detected
 - 🌐 **i18n**: English and Korean support (auto-detect)
-- 📐 **Multi-line**: Compact (1), Normal (2), Detailed (3) line modes
+- 📐 **Multi-line**: Compact (1), Normal (2), Detailed (4) line modes
 
 ### Coming Soon
 
@@ -43,7 +43,7 @@ Comprehensive status line plugin for Claude Code with context usage, API rate li
 
 ![Normal](images/normal.png)
 
-**Detailed (3 lines):**
+**Detailed (4 lines):**
 
 ![Detailed](images/detailed.png)
 

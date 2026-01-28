@@ -143,11 +143,12 @@ Display what the status line will look like based on their configuration:
 📁 project (main) │ ⏱ 45m │ ✓ 3/5
 ```
 
-**Detailed (3 lines):**
+**Detailed (4 lines):**
 ```
 🤖 Opus │ ████████░░ 80% │ 160K/200K │ $1.25 │ 5h: 42% (2h30m) │ 7d: 69% │ 7d-S: 2%
-📁 project (main) │ ⏱ 45m │ ✓ 3/5
-CLAUDE.md: 2 │ ⚙️ 12 done │ 🤖 Agent: 1
+📁 project (main) │ ⏱ 45m │ 🔥 5K/m │ ⏳ 2h15m │ ✓ 3/5
+CLAUDE.md: 2 │ ⚙️ 12 done │ 🤖 Agent: 1 │ 📦 85%
+🔷 gpt-5.2-codex │ 5h: 15% │ 7d: 5%
 ```
 
 ## Examples
