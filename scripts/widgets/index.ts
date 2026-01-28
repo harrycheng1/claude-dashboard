@@ -27,6 +27,7 @@ import { todoProgressWidget } from './todo-progress.js';
 import { burnRateWidget } from './burn-rate.js';
 import { depletionTimeWidget } from './depletion-time.js';
 import { cacheHitWidget } from './cache-hit.js';
+import { codexUsageWidget } from './codex-usage.js';
 
 /**
  * Widget registry - maps widget IDs to widget implementations
@@ -47,6 +48,7 @@ const widgetRegistry = new Map<WidgetId, Widget>([
   ['burnRate', burnRateWidget],
   ['depletionTime', depletionTimeWidget],
   ['cacheHit', cacheHitWidget],
+  ['codexUsage', codexUsageWidget],
 ] as [WidgetId, Widget][]);
 
 /**
@@ -82,6 +84,7 @@ export function getLines(config: Config): WidgetId[][] {
     ] as WidgetId[][],
     detailed: [
       ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet'],
+      ['codexUsage'],
       ['projectInfo', 'sessionDuration', 'burnRate', 'depletionTime', 'todoProgress'],
       ['configCounts', 'toolActivity', 'agentStatus', 'cacheHit'],
     ] as WidgetId[][],
