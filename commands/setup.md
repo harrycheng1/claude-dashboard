@@ -51,6 +51,10 @@ Configure the claude-dashboard status line plugin with widget system support.
 | `toolActivity` | Running/completed tools |
 | `agentStatus` | Subagent progress |
 | `todoProgress` | Todo completion rate |
+| `burnRate` | Token consumption per minute |
+| `cacheHit` | Cache hit rate percentage |
+| `depletionTime` | Estimated time to rate limit |
+| `codexUsage` | OpenAI Codex CLI usage (model, 5h, 7d) |
 
 ## Tasks
 
@@ -110,24 +114,18 @@ Create `~/.claude/claude-dashboard.local.json`:
 
 Add or update the statusLine configuration in `~/.claude/settings.json`:
 
-**Step 1**: Find the plugin path dynamically (version-independent):
+**Find the plugin path and update settings.json** (copy-paste one-liner):
 ```bash
-PLUGIN_PATH=$(ls -d ~/.claude/plugins/cache/claude-dashboard/claude-dashboard/*/dist/index.js 2>/dev/null | sort -V | tail -1)
+jq --arg path "$(ls -d ~/.claude/plugins/cache/claude-dashboard/claude-dashboard/*/dist/index.js 2>/dev/null | sort -V | tail -1)" '.statusLine = {"type": "command", "command": ("node " + $path)}' ~/.claude/settings.json > ~/.claude/settings.json.tmp && mv ~/.claude/settings.json.tmp ~/.claude/settings.json
 ```
 
-**Step 2**: Use the found path in settings.json:
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "node <PLUGIN_PATH_FROM_STEP_1>"
-  }
-}
-```
+This command:
+1. Finds the latest plugin version dynamically
+2. Updates `statusLine` in settings.json with the correct path
 
 **CRITICAL**:
 - NEVER hardcode version numbers like `1.3.0` or `1.4.0` in the path
-- Always use the dynamic lookup command above to find the latest version
+- Always use the dynamic lookup to find the latest version
 - The path should look like: `~/.claude/plugins/cache/claude-dashboard/claude-dashboard/X.Y.Z/dist/index.js`
 
 ### 4. Show example output
