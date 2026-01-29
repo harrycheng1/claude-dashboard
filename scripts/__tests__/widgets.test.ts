@@ -11,8 +11,11 @@ import { cacheHitWidget } from '../widgets/cache-hit.js';
 import { depletionTimeWidget } from '../widgets/depletion-time.js';
 import { codexUsageWidget } from '../widgets/codex-usage.js';
 import { geminiUsageWidget } from '../widgets/gemini-usage.js';
+import { configCountsWidget } from '../widgets/config-counts.js';
+import { sessionDurationWidget } from '../widgets/session-duration.js';
 import * as codexClient from '../utils/codex-client.js';
 import * as geminiClient from '../utils/gemini-client.js';
+import * as sessionUtils from '../utils/session.js';
 import type { WidgetContext, StdinInput, Config, Translations } from '../types.js';
 
 // Mock version module for codex-client
@@ -793,6 +796,143 @@ describe('widgets', () => {
       expect(result).toContain('💎');
       expect(result).toContain('gemini-3-pro-preview');
       expect(result).not.toContain('%');
+    });
+  });
+
+  describe('configCountsWidget', () => {
+    it('should have correct id and name', () => {
+      expect(configCountsWidget.id).toBe('configCounts');
+      expect(configCountsWidget.name).toBe('Config Counts');
+    });
+
+    it('should return null when workspace is missing', async () => {
+      const ctx = createContext({ workspace: undefined as any });
+      const data = await configCountsWidget.getData(ctx);
+      expect(data).toBeNull();
+    });
+
+    it('should render claudeMd count', () => {
+      const ctx = createContext();
+      const data = { claudeMd: 2, rules: 0, mcps: 0, hooks: 0 };
+      const result = configCountsWidget.render(data, ctx);
+
+      expect(result).toContain('CLAUDE.md');
+      expect(result).toContain('2');
+    });
+
+    it('should render rules count', () => {
+      const ctx = createContext();
+      const data = { claudeMd: 0, rules: 5, mcps: 0, hooks: 0 };
+      const result = configCountsWidget.render(data, ctx);
+
+      expect(result).toContain('Rules');
+      expect(result).toContain('5');
+    });
+
+    it('should render mcps count', () => {
+      const ctx = createContext();
+      const data = { claudeMd: 0, rules: 0, mcps: 3, hooks: 0 };
+      const result = configCountsWidget.render(data, ctx);
+
+      expect(result).toContain('MCP');
+      expect(result).toContain('3');
+    });
+
+    it('should render hooks count', () => {
+      const ctx = createContext();
+      const data = { claudeMd: 0, rules: 0, mcps: 0, hooks: 2 };
+      const result = configCountsWidget.render(data, ctx);
+
+      expect(result).toContain('Hooks');
+      expect(result).toContain('2');
+    });
+
+    it('should render multiple counts', () => {
+      const ctx = createContext();
+      const data = { claudeMd: 1, rules: 3, mcps: 2, hooks: 1 };
+      const result = configCountsWidget.render(data, ctx);
+
+      expect(result).toContain('CLAUDE.md: 1');
+      expect(result).toContain('Rules: 3');
+      expect(result).toContain('MCP: 2');
+      expect(result).toContain('Hooks: 1');
+    });
+
+    it('should only render non-zero counts', () => {
+      const ctx = createContext();
+      const data = { claudeMd: 1, rules: 0, mcps: 2, hooks: 0 };
+      const result = configCountsWidget.render(data, ctx);
+
+      expect(result).toContain('CLAUDE.md');
+      expect(result).toContain('MCP');
+      expect(result).not.toContain('Rules');
+      expect(result).not.toContain('Hooks');
+    });
+  });
+
+  describe('sessionDurationWidget', () => {
+    beforeEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('should have correct id and name', () => {
+      expect(sessionDurationWidget.id).toBe('sessionDuration');
+      expect(sessionDurationWidget.name).toBe('Session Duration');
+    });
+
+    it('should return elapsed time data', async () => {
+      vi.spyOn(sessionUtils, 'getSessionElapsedMs').mockResolvedValue(3600000); // 1 hour
+
+      const ctx = createContext();
+      const data = await sessionDurationWidget.getData(ctx);
+
+      expect(data).not.toBeNull();
+      expect(data?.elapsedMs).toBe(3600000);
+    });
+
+    it('should use session_id from stdin if available', async () => {
+      const mockGetSessionElapsedMs = vi.spyOn(sessionUtils, 'getSessionElapsedMs').mockResolvedValue(1000);
+
+      const ctx = createContext();
+      ctx.stdin.session_id = 'test-session-123';
+      await sessionDurationWidget.getData(ctx);
+
+      expect(mockGetSessionElapsedMs).toHaveBeenCalledWith('test-session-123');
+    });
+
+    it('should use default session_id when not provided', async () => {
+      const mockGetSessionElapsedMs = vi.spyOn(sessionUtils, 'getSessionElapsedMs').mockResolvedValue(1000);
+
+      const ctx = createContext();
+      ctx.stdin.session_id = undefined;
+      await sessionDurationWidget.getData(ctx);
+
+      expect(mockGetSessionElapsedMs).toHaveBeenCalledWith('default');
+    });
+
+    it('should render duration with timer icon', () => {
+      const ctx = createContext();
+      const data = { elapsedMs: 3661000 }; // 1h 1m 1s
+      const result = sessionDurationWidget.render(data, ctx);
+
+      expect(result).toContain('⏱');
+      expect(result).toContain('1h');
+    });
+
+    it('should format short durations', () => {
+      const ctx = createContext();
+      const data = { elapsedMs: 300000 }; // 5 minutes
+      const result = sessionDurationWidget.render(data, ctx);
+
+      expect(result).toContain('5m');
+    });
+
+    it('should format long durations', () => {
+      const ctx = createContext();
+      const data = { elapsedMs: 90000000 }; // 25 hours
+      const result = sessionDurationWidget.render(data, ctx);
+
+      expect(result).toContain('25h');
     });
   });
 });
