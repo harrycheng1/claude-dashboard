@@ -3,7 +3,7 @@
  * Fetches usage limits from Google Code Assist API
  */
 
-import { readFile, stat } from 'fs/promises';
+import { readFile, writeFile, stat } from 'fs/promises';
 import { execFileSync } from 'child_process';
 import os from 'os';
 import path from 'path';
@@ -21,6 +21,15 @@ const MAIN_ACCOUNT_KEY = 'main-account';
 
 const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
 const CODE_ASSIST_API_VERSION = 'v1internal';
+
+// Google OAuth endpoints and credentials (from Gemini CLI source)
+// Note: Client secret is safe to embed per Google's installed app guidelines
+const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
+const OAUTH_CLIENT_ID = '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com';
+const OAUTH_CLIENT_SECRET = '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';
+
+// Token refresh buffer (refresh 5 minutes before expiry)
+const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 /**
  * In-memory cache for Gemini usage
@@ -190,6 +199,134 @@ async function getGeminiCredentials(): Promise<GeminiCredentials | null> {
 }
 
 /**
+ * Check if token needs refresh (expired or expiring soon)
+ */
+function tokenNeedsRefresh(credentials: GeminiCredentials): boolean {
+  if (!credentials.expiryDate) {
+    return false; // No expiry info, assume valid
+  }
+  return credentials.expiryDate < (Date.now() + TOKEN_REFRESH_BUFFER_MS);
+}
+
+/**
+ * Refresh OAuth token using refresh_token
+ * Returns new credentials or null if refresh fails
+ */
+async function refreshToken(credentials: GeminiCredentials): Promise<GeminiCredentials | null> {
+  if (!credentials.refreshToken) {
+    debugLog('gemini', 'refreshToken: no refresh token available');
+    return null;
+  }
+
+  try {
+    debugLog('gemini', 'refreshToken: attempting refresh...');
+
+    const response = await fetch(GOOGLE_TOKEN_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: credentials.refreshToken,
+        client_id: OAUTH_CLIENT_ID,
+        client_secret: OAUTH_CLIENT_SECRET,
+      }),
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      debugLog('gemini', 'refreshToken: failed', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (!data.access_token) {
+      debugLog('gemini', 'refreshToken: no access_token in response');
+      return null;
+    }
+
+    const newCredentials: GeminiCredentials = {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || credentials.refreshToken,
+      expiryDate: Date.now() + (data.expires_in * 1000),
+    };
+
+    // Save to file
+    await saveCredentialsToFile(newCredentials, data);
+
+    // Clear cached credentials to force reload
+    cachedCredentials = null;
+
+    debugLog('gemini', 'refreshToken: success, new expiry', new Date(newCredentials.expiryDate!).toISOString());
+
+    return newCredentials;
+  } catch (err) {
+    debugLog('gemini', 'refreshToken: error', err);
+    return null;
+  }
+}
+
+/**
+ * Save refreshed credentials to file
+ */
+async function saveCredentialsToFile(credentials: GeminiCredentials, rawResponse: Record<string, unknown>): Promise<void> {
+  try {
+    const oauthPath = path.join(getGeminiDir(), OAUTH_CREDS_FILE);
+
+    // Read existing file to preserve other fields
+    let existingData: Record<string, unknown> = {};
+    try {
+      const raw = await readFile(oauthPath, 'utf-8');
+      existingData = JSON.parse(raw);
+    } catch {
+      // File doesn't exist or invalid JSON
+    }
+
+    // Update with new token data
+    const newData = {
+      ...existingData,
+      access_token: credentials.accessToken,
+      refresh_token: credentials.refreshToken,
+      expiry_date: credentials.expiryDate,
+      token_type: rawResponse.token_type || 'Bearer',
+      scope: rawResponse.scope || existingData.scope,
+    };
+
+    await writeFile(oauthPath, JSON.stringify(newData, null, 2), { mode: 0o600 });
+    debugLog('gemini', 'saveCredentialsToFile: saved');
+  } catch (err) {
+    debugLog('gemini', 'saveCredentialsToFile: error', err);
+  }
+}
+
+/**
+ * Get valid credentials, refreshing if necessary
+ */
+async function getValidCredentials(): Promise<GeminiCredentials | null> {
+  let credentials = await getGeminiCredentials();
+
+  if (!credentials) {
+    return null;
+  }
+
+  // Check if token needs refresh
+  if (tokenNeedsRefresh(credentials)) {
+    debugLog('gemini', 'getValidCredentials: token expired or expiring, attempting refresh');
+    const refreshedCreds = await refreshToken(credentials);
+    if (refreshedCreds) {
+      return refreshedCreds;
+    }
+    // Refresh failed, return null (token is invalid)
+    debugLog('gemini', 'getValidCredentials: refresh failed');
+    return null;
+  }
+
+  return credentials;
+}
+
+/**
  * Cached project ID from loadCodeAssist API
  */
 let cachedProjectId: { data: string; timestamp: number } | null = null;
@@ -298,15 +435,9 @@ async function getProjectId(credentials: GeminiCredentials): Promise<string | nu
  * Fetch Gemini usage limits
  */
 export async function fetchGeminiUsage(ttlSeconds: number = 60): Promise<GeminiUsageLimits | null> {
-  const credentials = await getGeminiCredentials();
+  const credentials = await getValidCredentials();
   if (!credentials) {
-    debugLog('gemini', 'fetchGeminiUsage: no credentials found');
-    return null;
-  }
-
-  // Check if token is expired
-  if (credentials.expiryDate && credentials.expiryDate < Date.now()) {
-    debugLog('gemini', 'fetchGeminiUsage: token expired');
+    debugLog('gemini', 'fetchGeminiUsage: no valid credentials');
     return null;
   }
 
@@ -380,7 +511,13 @@ async function fetchFromGeminiApi(
       return null;
     }
 
-    const data: unknown = await response.json();
+    let data: unknown;
+    try {
+      data = await response.json();
+    } catch {
+      debugLog('gemini', 'fetchFromGeminiApi: invalid JSON response');
+      return null;
+    }
 
     // Validate response structure
     if (!data || typeof data !== 'object') {
@@ -389,7 +526,7 @@ async function fetchFromGeminiApi(
     }
 
     const typedData = data as RetrieveUserQuotaResponse;
-    debugLog('gemini', 'fetchFromGeminiApi: got data', typedData.buckets?.length || 0, 'buckets');
+    debugLog('gemini', `fetchFromGeminiApi: got data ${typedData.buckets?.length || 0} buckets`);
 
     const model = await getGeminiModel();
 
