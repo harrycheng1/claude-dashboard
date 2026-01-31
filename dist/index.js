@@ -1423,6 +1423,7 @@ var OAUTH_CLIENT_SECRET = "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";
 var TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1e3;
 var geminiCacheMap = /* @__PURE__ */ new Map();
 var pendingRequests4 = /* @__PURE__ */ new Map();
+var pendingRefreshRequests = /* @__PURE__ */ new Map();
 var cachedCredentials = null;
 var cachedSettings = null;
 function getGeminiDir() {
@@ -1504,13 +1505,9 @@ function tokenNeedsRefresh(credentials) {
   }
   return credentials.expiryDate < Date.now() + TOKEN_REFRESH_BUFFER_MS;
 }
-async function refreshToken(credentials) {
-  if (!credentials.refreshToken) {
-    debugLog("gemini", "refreshToken: no refresh token available");
-    return null;
-  }
+async function refreshTokenInternal(credentials) {
   try {
-    debugLog("gemini", "refreshToken: attempting refresh...");
+    debugLog("gemini", "refreshTokenInternal: attempting refresh...");
     const response = await fetch(GOOGLE_TOKEN_ENDPOINT, {
       method: "POST",
       headers: {
@@ -1525,12 +1522,12 @@ async function refreshToken(credentials) {
       signal: AbortSignal.timeout(API_TIMEOUT_MS3)
     });
     if (!response.ok) {
-      debugLog("gemini", "refreshToken: failed", response.status);
+      debugLog("gemini", "refreshTokenInternal: failed", response.status);
       return null;
     }
     const data = await response.json();
     if (!data.access_token) {
-      debugLog("gemini", "refreshToken: no access_token in response");
+      debugLog("gemini", "refreshTokenInternal: no access_token in response");
       return null;
     }
     const newCredentials = {
@@ -1540,12 +1537,29 @@ async function refreshToken(credentials) {
     };
     await saveCredentialsToFile(newCredentials, data);
     cachedCredentials = null;
-    debugLog("gemini", "refreshToken: success, new expiry", new Date(newCredentials.expiryDate).toISOString());
+    debugLog("gemini", "refreshTokenInternal: success, new expiry", new Date(newCredentials.expiryDate).toISOString());
     return newCredentials;
   } catch (err) {
-    debugLog("gemini", "refreshToken: error", err);
+    debugLog("gemini", "refreshTokenInternal: error", err);
     return null;
   }
+}
+async function refreshToken(credentials) {
+  if (!credentials.refreshToken) {
+    debugLog("gemini", "refreshToken: no refresh token available");
+    return null;
+  }
+  const tokenHash = hashToken(credentials.accessToken);
+  const pending = pendingRefreshRequests.get(tokenHash);
+  if (pending) {
+    debugLog("gemini", "refreshToken: using pending refresh request");
+    return pending;
+  }
+  const refreshPromise = refreshTokenInternal(credentials).finally(() => {
+    pendingRefreshRequests.delete(tokenHash);
+  });
+  pendingRefreshRequests.set(tokenHash, refreshPromise);
+  return refreshPromise;
 }
 async function saveCredentialsToFile(credentials, rawResponse) {
   try {
@@ -1586,7 +1600,7 @@ async function getValidCredentials() {
   }
   return credentials;
 }
-var cachedProjectId = null;
+var projectIdCacheMap = /* @__PURE__ */ new Map();
 var PROJECT_ID_CACHE_TTL_MS = 5 * 60 * 1e3;
 async function getGeminiSettings() {
   try {
@@ -1621,8 +1635,10 @@ async function getProjectId(credentials) {
   if (settings?.cloudaicompanionProject) {
     return settings.cloudaicompanionProject;
   }
-  if (cachedProjectId && Date.now() - cachedProjectId.timestamp < PROJECT_ID_CACHE_TTL_MS) {
-    return cachedProjectId.data;
+  const tokenHash = hashToken(credentials.accessToken);
+  const cached = projectIdCacheMap.get(tokenHash);
+  if (cached && Date.now() - cached.timestamp < PROJECT_ID_CACHE_TTL_MS) {
+    return cached.data;
   }
   try {
     const url = `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:loadCodeAssist`;
@@ -1650,7 +1666,7 @@ async function getProjectId(credentials) {
     const data = await response.json();
     const projectId = data?.cloudaicompanionProject;
     if (projectId) {
-      cachedProjectId = { data: projectId, timestamp: Date.now() };
+      projectIdCacheMap.set(tokenHash, { data: projectId, timestamp: Date.now() });
       return projectId;
     }
   } catch (err) {
@@ -1789,7 +1805,12 @@ var geminiUsageWidget = {
     const limits = await fetchGeminiUsage(ctx.config.cache.ttlSeconds);
     debugLog("gemini", "fetchGeminiUsage result:", limits);
     if (!limits) {
-      return null;
+      return {
+        model: "gemini",
+        usedPercent: null,
+        resetAt: null,
+        isError: true
+      };
     }
     return {
       model: limits.model,
@@ -1801,7 +1822,9 @@ var geminiUsageWidget = {
     const { translations: t } = ctx;
     const parts = [];
     parts.push(`${colorize("\u{1F48E}", COLORS.cyan)} ${data.model}`);
-    if (data.usedPercent !== null) {
+    if (data.isError) {
+      parts.push(colorize("\u26A0\uFE0F", COLORS.yellow));
+    } else if (data.usedPercent !== null) {
       parts.push(formatUsage(data.usedPercent, data.resetAt, t));
     }
     return parts.join(` ${colorize("\u2502", COLORS.dim)} `);
