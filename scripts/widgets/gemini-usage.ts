@@ -45,7 +45,13 @@ export const geminiUsageWidget: Widget<GeminiUsageData> = {
     const limits = await fetchGeminiUsage(ctx.config.cache.ttlSeconds);
     debugLog('gemini', 'fetchGeminiUsage result:', limits);
     if (!limits) {
-      return null;
+      // Return error state instead of null to show ⚠️ indicator
+      return {
+        model: 'gemini',
+        usedPercent: null,
+        resetAt: null,
+        isError: true,
+      };
     }
 
     return {
@@ -62,8 +68,10 @@ export const geminiUsageWidget: Widget<GeminiUsageData> = {
     // Gemini icon (diamond) + model name
     parts.push(`${colorize('💎', COLORS.cyan)} ${data.model}`);
 
-    // Usage percentage with reset time
-    if (data.usedPercent !== null) {
+    // Show error indicator or usage percentage
+    if (data.isError) {
+      parts.push(colorize('⚠️', COLORS.yellow));
+    } else if (data.usedPercent !== null) {
       parts.push(formatUsage(data.usedPercent, data.resetAt, t));
     }
 

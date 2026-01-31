@@ -42,6 +42,11 @@ const geminiCacheMap: Map<string, CacheEntry<GeminiUsageLimits>> = new Map();
 const pendingRequests: Map<string, Promise<GeminiUsageLimits | null>> = new Map();
 
 /**
+ * Pending token refresh requests to prevent duplicates (per token hash)
+ */
+const pendingRefreshRequests: Map<string, Promise<GeminiCredentials | null>> = new Map();
+
+/**
  * Cached OAuth credentials with mtime tracking
  */
 let cachedCredentials: { data: GeminiCredentials; mtime: number } | null = null;
@@ -209,17 +214,11 @@ function tokenNeedsRefresh(credentials: GeminiCredentials): boolean {
 }
 
 /**
- * Refresh OAuth token using refresh_token
- * Returns new credentials or null if refresh fails
+ * Internal refresh token implementation
  */
-async function refreshToken(credentials: GeminiCredentials): Promise<GeminiCredentials | null> {
-  if (!credentials.refreshToken) {
-    debugLog('gemini', 'refreshToken: no refresh token available');
-    return null;
-  }
-
+async function refreshTokenInternal(credentials: GeminiCredentials): Promise<GeminiCredentials | null> {
   try {
-    debugLog('gemini', 'refreshToken: attempting refresh...');
+    debugLog('gemini', 'refreshTokenInternal: attempting refresh...');
 
     const response = await fetch(GOOGLE_TOKEN_ENDPOINT, {
       method: 'POST',
@@ -228,7 +227,7 @@ async function refreshToken(credentials: GeminiCredentials): Promise<GeminiCrede
       },
       body: new URLSearchParams({
         grant_type: 'refresh_token',
-        refresh_token: credentials.refreshToken,
+        refresh_token: credentials.refreshToken!,
         client_id: OAUTH_CLIENT_ID,
         client_secret: OAUTH_CLIENT_SECRET,
       }),
@@ -236,14 +235,14 @@ async function refreshToken(credentials: GeminiCredentials): Promise<GeminiCrede
     });
 
     if (!response.ok) {
-      debugLog('gemini', 'refreshToken: failed', response.status);
+      debugLog('gemini', 'refreshTokenInternal: failed', response.status);
       return null;
     }
 
     const data = await response.json();
 
     if (!data.access_token) {
-      debugLog('gemini', 'refreshToken: no access_token in response');
+      debugLog('gemini', 'refreshTokenInternal: no access_token in response');
       return null;
     }
 
@@ -259,13 +258,41 @@ async function refreshToken(credentials: GeminiCredentials): Promise<GeminiCrede
     // Clear cached credentials to force reload
     cachedCredentials = null;
 
-    debugLog('gemini', 'refreshToken: success, new expiry', new Date(newCredentials.expiryDate!).toISOString());
+    debugLog('gemini', 'refreshTokenInternal: success, new expiry', new Date(newCredentials.expiryDate!).toISOString());
 
     return newCredentials;
   } catch (err) {
-    debugLog('gemini', 'refreshToken: error', err);
+    debugLog('gemini', 'refreshTokenInternal: error', err);
     return null;
   }
+}
+
+/**
+ * Refresh OAuth token using refresh_token with deduplication
+ * Returns new credentials or null if refresh fails
+ */
+async function refreshToken(credentials: GeminiCredentials): Promise<GeminiCredentials | null> {
+  if (!credentials.refreshToken) {
+    debugLog('gemini', 'refreshToken: no refresh token available');
+    return null;
+  }
+
+  const tokenHash = hashToken(credentials.accessToken);
+
+  // Return pending request if one exists for this token
+  const pending = pendingRefreshRequests.get(tokenHash);
+  if (pending) {
+    debugLog('gemini', 'refreshToken: using pending refresh request');
+    return pending;
+  }
+
+  // Create and track new refresh request
+  const refreshPromise = refreshTokenInternal(credentials).finally(() => {
+    pendingRefreshRequests.delete(tokenHash);
+  });
+  pendingRefreshRequests.set(tokenHash, refreshPromise);
+
+  return refreshPromise;
 }
 
 /**
@@ -327,9 +354,9 @@ async function getValidCredentials(): Promise<GeminiCredentials | null> {
 }
 
 /**
- * Cached project ID from loadCodeAssist API
+ * Cached project ID from loadCodeAssist API (per token hash for multi-account support)
  */
-let cachedProjectId: { data: string; timestamp: number } | null = null;
+const projectIdCacheMap: Map<string, { data: string; timestamp: number }> = new Map();
 const PROJECT_ID_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
@@ -386,9 +413,13 @@ async function getProjectId(credentials: GeminiCredentials): Promise<string | nu
     return settings.cloudaicompanionProject;
   }
 
+  // Use token hash for cache key (multi-account support)
+  const tokenHash = hashToken(credentials.accessToken);
+
   // Check cache
-  if (cachedProjectId && (Date.now() - cachedProjectId.timestamp) < PROJECT_ID_CACHE_TTL_MS) {
-    return cachedProjectId.data;
+  const cached = projectIdCacheMap.get(tokenHash);
+  if (cached && (Date.now() - cached.timestamp) < PROJECT_ID_CACHE_TTL_MS) {
+    return cached.data;
   }
 
   // Fetch from loadCodeAssist API
@@ -421,7 +452,7 @@ async function getProjectId(credentials: GeminiCredentials): Promise<string | nu
     const projectId = data?.cloudaicompanionProject;
 
     if (projectId) {
-      cachedProjectId = { data: projectId, timestamp: Date.now() };
+      projectIdCacheMap.set(tokenHash, { data: projectId, timestamp: Date.now() });
       return projectId;
     }
   } catch (err) {
@@ -588,7 +619,8 @@ async function fetchFromGeminiApi(
  */
 export function clearGeminiCache(): void {
   geminiCacheMap.clear();
+  projectIdCacheMap.clear();
+  pendingRefreshRequests.clear();
   cachedCredentials = null;
   cachedSettings = null;
-  cachedProjectId = null;
 }

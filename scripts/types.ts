@@ -329,6 +329,8 @@ export interface GeminiUsageData {
   model: string;
   usedPercent: number | null;
   resetAt: string | null;
+  /** Indicates API error occurred */
+  isError?: boolean;
 }
 
 /**
