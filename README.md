@@ -51,6 +51,17 @@ Comprehensive status line plugin for Claude Code with context usage, API rate li
 
 > `*` after branch name indicates uncommitted changes in git
 
+**With z.ai/ZHIPU (4th line shows z.ai usage):**
+
+```
+🟠 GLM │ ████████░░ 80% │ 160K/200K │ $1.25 │ 5h: 42% (2h30m) │ 7d: 69%
+📁 project (main*) │ ⏱ 45m │ 🔥 351/min │ ⏳ ~2h30m │ ✓ 3/5
+CLAUDE.md: 2 │ ⚙️ 12 done │ 🤖 Agent: 1 │ 📦 85%
+🟠 GLM │ 5h: 42% (2h30m) │ 1m: 15% (25d3h)
+```
+
+> 🟠 indicates z.ai/ZHIPU provider. Shows 5-hour token usage and monthly MCP usage with reset countdown.
+
 ## Installation
 
 ### From Plugin Marketplace
