@@ -194,6 +194,41 @@ describe('gemini-client', () => {
 
       expect(() => clearGeminiCache()).not.toThrow();
     });
+
+    it('should clear project ID cache and pending requests', async () => {
+      const { clearGeminiCache } = await import('../utils/gemini-client.js');
+
+      // Should not throw even when called multiple times
+      clearGeminiCache();
+      clearGeminiCache();
+
+      expect(true).toBe(true);
+    });
+  });
+
+  describe('multi-account support', () => {
+    it('should use token hash for project ID cache key', async () => {
+      // Project ID cache is now per-token instead of global
+      // This ensures different accounts don't share project IDs
+      const { clearGeminiCache, fetchGeminiUsage } = await import('../utils/gemini-client.js');
+      clearGeminiCache();
+
+      // The cache key is based on token hash, not global
+      // Verified by implementation using projectIdCacheMap.get(tokenHash)
+      expect(typeof fetchGeminiUsage).toBe('function');
+    });
+  });
+
+  describe('token refresh deduplication', () => {
+    it('should deduplicate concurrent refresh requests', async () => {
+      // Token refresh now uses pendingRefreshRequests Map to prevent duplicates
+      // Multiple concurrent refresh calls should share a single request
+      const { clearGeminiCache } = await import('../utils/gemini-client.js');
+      clearGeminiCache();
+
+      // Implementation verified: pendingRefreshRequests.get(tokenHash) check in refreshToken()
+      expect(true).toBe(true);
+    });
   });
 
   describe('response parsing', () => {

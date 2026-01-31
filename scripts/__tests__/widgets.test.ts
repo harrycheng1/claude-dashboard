@@ -709,13 +709,18 @@ describe('widgets', () => {
       expect(data).toBeNull();
     });
 
-    it('should return null when API call fails', async () => {
+    it('should return error state when API call fails', async () => {
       vi.spyOn(geminiClient, 'isGeminiInstalled').mockResolvedValue(true);
       vi.spyOn(geminiClient, 'fetchGeminiUsage').mockResolvedValue(null);
 
       const ctx = createContext();
       const data = await geminiUsageWidget.getData(ctx);
-      expect(data).toBeNull();
+
+      // Should return error state instead of null
+      expect(data).not.toBeNull();
+      expect(data?.isError).toBe(true);
+      expect(data?.model).toBe('gemini');
+      expect(data?.usedPercent).toBeNull();
     });
 
     it('should return usage data when API call succeeds', async () => {
@@ -796,6 +801,21 @@ describe('widgets', () => {
       expect(result).toContain('💎');
       expect(result).toContain('gemini-3-pro-preview');
       expect(result).not.toContain('%');
+    });
+
+    it('should render error indicator when isError is true', () => {
+      const ctx = createContext();
+      const data = {
+        model: 'gemini',
+        usedPercent: null,
+        resetAt: null,
+        isError: true,
+      };
+      const result = geminiUsageWidget.render(data, ctx);
+
+      expect(result).toContain('💎');
+      expect(result).toContain('gemini');
+      expect(result).toContain('⚠️');
     });
   });
 
