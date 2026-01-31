@@ -10,7 +10,12 @@ import { burnRateWidget } from '../widgets/burn-rate.js';
 import { cacheHitWidget } from '../widgets/cache-hit.js';
 import { depletionTimeWidget } from '../widgets/depletion-time.js';
 import { codexUsageWidget } from '../widgets/codex-usage.js';
+import { geminiUsageWidget } from '../widgets/gemini-usage.js';
+import { configCountsWidget } from '../widgets/config-counts.js';
+import { sessionDurationWidget } from '../widgets/session-duration.js';
 import * as codexClient from '../utils/codex-client.js';
+import * as geminiClient from '../utils/gemini-client.js';
+import * as sessionUtils from '../utils/session.js';
 import type { WidgetContext, StdinInput, Config, Translations } from '../types.js';
 
 // Mock version module for codex-client
@@ -587,13 +592,18 @@ describe('widgets', () => {
       expect(data).toBeNull();
     });
 
-    it('should return null when API call fails', async () => {
+    it('should return error state when API call fails', async () => {
       vi.spyOn(codexClient, 'isCodexInstalled').mockResolvedValue(true);
       vi.spyOn(codexClient, 'fetchCodexUsage').mockResolvedValue(null);
 
       const ctx = createContext();
       const data = await codexUsageWidget.getData(ctx);
-      expect(data).toBeNull();
+
+      // Should return error state instead of null
+      expect(data).not.toBeNull();
+      expect(data?.isError).toBe(true);
+      expect(data?.model).toBe('codex');
+      expect(data?.primaryPercent).toBeNull();
     });
 
     it('should return usage data when API call succeeds', async () => {
@@ -683,6 +693,291 @@ describe('widgets', () => {
       expect(result).toContain('o3');
       expect(result).not.toContain('5h:');
       expect(result).not.toContain('7d:');
+    });
+
+    it('should render error indicator when isError is true', () => {
+      const ctx = createContext();
+      const data = {
+        model: 'codex',
+        planType: '',
+        primaryPercent: null,
+        primaryResetAt: null,
+        secondaryPercent: null,
+        secondaryResetAt: null,
+        isError: true,
+      };
+      const result = codexUsageWidget.render(data, ctx);
+
+      expect(result).toContain('🔷');
+      expect(result).toContain('codex');
+      expect(result).toContain('⚠️');
+      expect(result).not.toContain('5h:');
+      expect(result).not.toContain('7d:');
+    });
+  });
+
+  describe('geminiUsageWidget', () => {
+    beforeEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('should have correct id and name', () => {
+      expect(geminiUsageWidget.id).toBe('geminiUsage');
+      expect(geminiUsageWidget.name).toBe('Gemini Usage');
+    });
+
+    it('should return null when Gemini is not installed', async () => {
+      vi.spyOn(geminiClient, 'isGeminiInstalled').mockResolvedValue(false);
+
+      const ctx = createContext();
+      const data = await geminiUsageWidget.getData(ctx);
+      expect(data).toBeNull();
+    });
+
+    it('should return error state when API call fails', async () => {
+      vi.spyOn(geminiClient, 'isGeminiInstalled').mockResolvedValue(true);
+      vi.spyOn(geminiClient, 'fetchGeminiUsage').mockResolvedValue(null);
+
+      const ctx = createContext();
+      const data = await geminiUsageWidget.getData(ctx);
+
+      // Should return error state instead of null
+      expect(data).not.toBeNull();
+      expect(data?.isError).toBe(true);
+      expect(data?.model).toBe('gemini');
+      expect(data?.usedPercent).toBeNull();
+    });
+
+    it('should return usage data when API call succeeds', async () => {
+      vi.spyOn(geminiClient, 'isGeminiInstalled').mockResolvedValue(true);
+      vi.spyOn(geminiClient, 'fetchGeminiUsage').mockResolvedValue({
+        model: 'gemini-2.5-pro',
+        usedPercent: 25,
+        resetAt: '2026-01-30T10:00:00Z',
+        buckets: [
+          { modelId: 'gemini-2.5-pro', usedPercent: 25, resetAt: '2026-01-30T10:00:00Z' },
+        ],
+      });
+
+      const ctx = createContext();
+      const data = await geminiUsageWidget.getData(ctx);
+
+      expect(data).not.toBeNull();
+      expect(data?.model).toBe('gemini-2.5-pro');
+      expect(data?.usedPercent).toBe(25);
+      expect(data?.resetAt).toBe('2026-01-30T10:00:00Z');
+    });
+
+    it('should handle null usedPercent', async () => {
+      vi.spyOn(geminiClient, 'isGeminiInstalled').mockResolvedValue(true);
+      vi.spyOn(geminiClient, 'fetchGeminiUsage').mockResolvedValue({
+        model: 'gemini-2.0-flash',
+        usedPercent: null,
+        resetAt: null,
+        buckets: [],
+      });
+
+      const ctx = createContext();
+      const data = await geminiUsageWidget.getData(ctx);
+
+      expect(data?.model).toBe('gemini-2.0-flash');
+      expect(data?.usedPercent).toBeNull();
+      expect(data?.resetAt).toBeNull();
+    });
+
+    it('should render model name and percentage', () => {
+      const ctx = createContext();
+      const data = {
+        model: 'gemini-2.5-pro',
+        usedPercent: 35,
+        resetAt: '2026-01-30T10:00:00Z',
+      };
+      const result = geminiUsageWidget.render(data, ctx);
+
+      expect(result).toContain('💎');
+      expect(result).toContain('gemini-2.5-pro');
+      expect(result).toContain('35%');
+    });
+
+    it('should render reset time', () => {
+      const ctx = createContext();
+      // Set reset time to ~2 hours from now
+      const resetAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+      const data = {
+        model: 'gemini-2.0-flash',
+        usedPercent: 50,
+        resetAt,
+      };
+      const result = geminiUsageWidget.render(data, ctx);
+
+      expect(result).toContain('('); // Has reset time in parentheses
+      expect(result).toMatch(/1h\d+m|2h/); // ~2 hours remaining
+    });
+
+    it('should handle null usedPercent in render', () => {
+      const ctx = createContext();
+      const data = {
+        model: 'gemini-3-pro-preview',
+        usedPercent: null,
+        resetAt: null,
+      };
+      const result = geminiUsageWidget.render(data, ctx);
+
+      expect(result).toContain('💎');
+      expect(result).toContain('gemini-3-pro-preview');
+      expect(result).not.toContain('%');
+    });
+
+    it('should render error indicator when isError is true', () => {
+      const ctx = createContext();
+      const data = {
+        model: 'gemini',
+        usedPercent: null,
+        resetAt: null,
+        isError: true,
+      };
+      const result = geminiUsageWidget.render(data, ctx);
+
+      expect(result).toContain('💎');
+      expect(result).toContain('gemini');
+      expect(result).toContain('⚠️');
+    });
+  });
+
+  describe('configCountsWidget', () => {
+    it('should have correct id and name', () => {
+      expect(configCountsWidget.id).toBe('configCounts');
+      expect(configCountsWidget.name).toBe('Config Counts');
+    });
+
+    it('should return null when workspace is missing', async () => {
+      const ctx = createContext({ workspace: undefined as any });
+      const data = await configCountsWidget.getData(ctx);
+      expect(data).toBeNull();
+    });
+
+    it('should render claudeMd count', () => {
+      const ctx = createContext();
+      const data = { claudeMd: 2, rules: 0, mcps: 0, hooks: 0 };
+      const result = configCountsWidget.render(data, ctx);
+
+      expect(result).toContain('CLAUDE.md');
+      expect(result).toContain('2');
+    });
+
+    it('should render rules count', () => {
+      const ctx = createContext();
+      const data = { claudeMd: 0, rules: 5, mcps: 0, hooks: 0 };
+      const result = configCountsWidget.render(data, ctx);
+
+      expect(result).toContain('Rules');
+      expect(result).toContain('5');
+    });
+
+    it('should render mcps count', () => {
+      const ctx = createContext();
+      const data = { claudeMd: 0, rules: 0, mcps: 3, hooks: 0 };
+      const result = configCountsWidget.render(data, ctx);
+
+      expect(result).toContain('MCP');
+      expect(result).toContain('3');
+    });
+
+    it('should render hooks count', () => {
+      const ctx = createContext();
+      const data = { claudeMd: 0, rules: 0, mcps: 0, hooks: 2 };
+      const result = configCountsWidget.render(data, ctx);
+
+      expect(result).toContain('Hooks');
+      expect(result).toContain('2');
+    });
+
+    it('should render multiple counts', () => {
+      const ctx = createContext();
+      const data = { claudeMd: 1, rules: 3, mcps: 2, hooks: 1 };
+      const result = configCountsWidget.render(data, ctx);
+
+      expect(result).toContain('CLAUDE.md: 1');
+      expect(result).toContain('Rules: 3');
+      expect(result).toContain('MCP: 2');
+      expect(result).toContain('Hooks: 1');
+    });
+
+    it('should only render non-zero counts', () => {
+      const ctx = createContext();
+      const data = { claudeMd: 1, rules: 0, mcps: 2, hooks: 0 };
+      const result = configCountsWidget.render(data, ctx);
+
+      expect(result).toContain('CLAUDE.md');
+      expect(result).toContain('MCP');
+      expect(result).not.toContain('Rules');
+      expect(result).not.toContain('Hooks');
+    });
+  });
+
+  describe('sessionDurationWidget', () => {
+    beforeEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('should have correct id and name', () => {
+      expect(sessionDurationWidget.id).toBe('sessionDuration');
+      expect(sessionDurationWidget.name).toBe('Session Duration');
+    });
+
+    it('should return elapsed time data', async () => {
+      vi.spyOn(sessionUtils, 'getSessionElapsedMs').mockResolvedValue(3600000); // 1 hour
+
+      const ctx = createContext();
+      const data = await sessionDurationWidget.getData(ctx);
+
+      expect(data).not.toBeNull();
+      expect(data?.elapsedMs).toBe(3600000);
+    });
+
+    it('should use session_id from stdin if available', async () => {
+      const mockGetSessionElapsedMs = vi.spyOn(sessionUtils, 'getSessionElapsedMs').mockResolvedValue(1000);
+
+      const ctx = createContext();
+      ctx.stdin.session_id = 'test-session-123';
+      await sessionDurationWidget.getData(ctx);
+
+      expect(mockGetSessionElapsedMs).toHaveBeenCalledWith('test-session-123');
+    });
+
+    it('should use default session_id when not provided', async () => {
+      const mockGetSessionElapsedMs = vi.spyOn(sessionUtils, 'getSessionElapsedMs').mockResolvedValue(1000);
+
+      const ctx = createContext();
+      ctx.stdin.session_id = undefined;
+      await sessionDurationWidget.getData(ctx);
+
+      expect(mockGetSessionElapsedMs).toHaveBeenCalledWith('default');
+    });
+
+    it('should render duration with timer icon', () => {
+      const ctx = createContext();
+      const data = { elapsedMs: 3661000 }; // 1h 1m 1s
+      const result = sessionDurationWidget.render(data, ctx);
+
+      expect(result).toContain('⏱');
+      expect(result).toContain('1h');
+    });
+
+    it('should format short durations', () => {
+      const ctx = createContext();
+      const data = { elapsedMs: 300000 }; // 5 minutes
+      const result = sessionDurationWidget.render(data, ctx);
+
+      expect(result).toContain('5m');
+    });
+
+    it('should format long durations', () => {
+      const ctx = createContext();
+      const data = { elapsedMs: 90000000 }; // 25 hours
+      const result = sessionDurationWidget.render(data, ctx);
+
+      expect(result).toContain('25h');
     });
   });
 });
