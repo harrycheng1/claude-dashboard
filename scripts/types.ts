@@ -49,7 +49,8 @@ export type WidgetId =
   | 'depletionTime'
   | 'cacheHit'
   | 'codexUsage'
-  | 'geminiUsage';
+  | 'geminiUsage'
+  | 'zaiUsage';
 
 /**
  * Display mode for status line output
@@ -75,7 +76,7 @@ export const DISPLAY_PRESETS: Record<Exclude<DisplayMode, 'custom'>, WidgetId[][
     ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet'],
     ['projectInfo', 'sessionDuration', 'burnRate', 'depletionTime', 'todoProgress'],
     ['configCounts', 'toolActivity', 'agentStatus', 'cacheHit'],
-    ['codexUsage', 'geminiUsage'],
+    ['codexUsage', 'geminiUsage', 'zaiUsage'],
   ],
 };
 
@@ -120,6 +121,7 @@ export interface Translations {
     '7d': string;
     '7d_all': string;
     '7d_sonnet': string;
+    '1m': string;
   };
   time: {
     days: string;
@@ -336,6 +338,24 @@ export interface GeminiUsageData {
 }
 
 /**
+ * z.ai/ZHIPU usage widget data
+ */
+export interface ZaiUsageData {
+  /** Model name (e.g., 'GLM') */
+  model: string;
+  /** 5-hour token usage percentage (0-100) */
+  tokensPercent: number | null;
+  /** Token limit reset time (ms since epoch) */
+  tokensResetAt: number | null;
+  /** Monthly MCP usage percentage (0-100) */
+  mcpPercent: number | null;
+  /** MCP limit reset time (ms since epoch) */
+  mcpResetAt: number | null;
+  /** Indicates API error occurred */
+  isError?: boolean;
+}
+
+/**
  * Union type of all widget data
  */
 export type WidgetData =
@@ -353,7 +373,8 @@ export type WidgetData =
   | DepletionTimeData
   | CacheHitData
   | CodexUsageData
-  | GeminiUsageData;
+  | GeminiUsageData
+  | ZaiUsageData;
 
 /**
  * Transcript entry from JSONL file
