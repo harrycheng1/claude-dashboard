@@ -270,7 +270,12 @@ Check usage limits for all AI CLIs (Claude, Codex, Gemini, z.ai) at once and get
   5h: 0% (4h59m)  |  7d: 1% (3d8h)  |  Plan: plus
 
 [Gemini]
-  Used: 0% (15h7m)  |  Model: gemini-2.0-flash
+  gemini-2.0-flash        0% (57m)
+  gemini-2.5-flash        0% (57m)
+  gemini-2.5-flash-lite   1% (57m)
+  gemini-2.5-pro          2% (12h57m)
+  gemini-3-flash-preview  0% (57m)
+  gemini-3-pro-preview    2% (12h57m)
 
 ════════════════════════════════════════
 Recommendation: codex (Lowest usage (0% used))

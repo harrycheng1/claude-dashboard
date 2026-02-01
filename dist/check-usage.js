@@ -1172,18 +1172,27 @@ function renderGeminiSection(usage, geminiData, t) {
     lines.push(`${label} ${colorize("\u26A0\uFE0F Error fetching data", COLORS.pastelYellow)}`);
     return lines;
   }
-  const parts = [];
-  if (geminiData.usedPercent !== null) {
-    const color = getColorForPercent(geminiData.usedPercent);
-    const reset = geminiData.resetAt ? ` (${formatTimeRemaining(geminiData.resetAt, t)})` : "";
-    parts.push(`Used: ${colorize(`${geminiData.usedPercent}%`, color)}${reset}`);
-  }
-  if (geminiData.model) {
-    parts.push(`Model: ${colorize(geminiData.model, COLORS.pastelGray)}`);
-  }
   lines.push(`${label}`);
-  if (parts.length > 0) {
-    lines.push(`  ${parts.join("  |  ")}`);
+  if (geminiData.buckets && geminiData.buckets.length > 0) {
+    const maxModelLen = Math.max(...geminiData.buckets.map((b) => (b.modelId || "unknown").length));
+    for (const bucket of geminiData.buckets) {
+      const modelName = bucket.modelId || "unknown";
+      const paddedModel = modelName.padEnd(maxModelLen);
+      if (bucket.usedPercent !== null) {
+        const color = getColorForPercent(bucket.usedPercent);
+        const reset = bucket.resetAt ? ` (${formatTimeRemaining(bucket.resetAt, t)})` : "";
+        lines.push(`  ${colorize(paddedModel, COLORS.pastelGray)}  ${colorize(`${bucket.usedPercent}%`, color)}${reset}`);
+      } else {
+        lines.push(`  ${colorize(paddedModel, COLORS.pastelGray)}  ${colorize("--", COLORS.gray)}`);
+      }
+    }
+  } else {
+    if (geminiData.usedPercent !== null) {
+      const color = getColorForPercent(geminiData.usedPercent);
+      const reset = geminiData.resetAt ? ` (${formatTimeRemaining(geminiData.resetAt, t)})` : "";
+      const modelInfo = geminiData.model ? `${geminiData.model}: ` : "";
+      lines.push(`  ${modelInfo}${colorize(`${geminiData.usedPercent}%`, color)}${reset}`);
+    }
   }
   return lines;
 }

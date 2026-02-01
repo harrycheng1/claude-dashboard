@@ -180,7 +180,7 @@ function renderCodexSection(
 }
 
 /**
- * Render Gemini-specific section
+ * Render Gemini-specific section with all model buckets
  */
 function renderGeminiSection(
   usage: CLIUsage,
@@ -200,25 +200,37 @@ function renderGeminiSection(
     return lines;
   }
 
-  const parts: string[] = [];
-
-  // Usage percentage
-  if (geminiData.usedPercent !== null) {
-    const color = getColorForPercent(geminiData.usedPercent);
-    const reset = geminiData.resetAt
-      ? ` (${formatTimeRemaining(geminiData.resetAt, t)})`
-      : '';
-    parts.push(`Used: ${colorize(`${geminiData.usedPercent}%`, color)}${reset}`);
-  }
-
-  // Model info
-  if (geminiData.model) {
-    parts.push(`Model: ${colorize(geminiData.model, COLORS.pastelGray)}`);
-  }
-
   lines.push(`${label}`);
-  if (parts.length > 0) {
-    lines.push(`  ${parts.join('  |  ')}`);
+
+  // Show all model buckets
+  if (geminiData.buckets && geminiData.buckets.length > 0) {
+    // Find max model name length for alignment
+    const maxModelLen = Math.max(...geminiData.buckets.map(b => (b.modelId || 'unknown').length));
+
+    for (const bucket of geminiData.buckets) {
+      const modelName = bucket.modelId || 'unknown';
+      const paddedModel = modelName.padEnd(maxModelLen);
+
+      if (bucket.usedPercent !== null) {
+        const color = getColorForPercent(bucket.usedPercent);
+        const reset = bucket.resetAt
+          ? ` (${formatTimeRemaining(bucket.resetAt, t)})`
+          : '';
+        lines.push(`  ${colorize(paddedModel, COLORS.pastelGray)}  ${colorize(`${bucket.usedPercent}%`, color)}${reset}`);
+      } else {
+        lines.push(`  ${colorize(paddedModel, COLORS.pastelGray)}  ${colorize('--', COLORS.gray)}`);
+      }
+    }
+  } else {
+    // Fallback to single usage display
+    if (geminiData.usedPercent !== null) {
+      const color = getColorForPercent(geminiData.usedPercent);
+      const reset = geminiData.resetAt
+        ? ` (${formatTimeRemaining(geminiData.resetAt, t)})`
+        : '';
+      const modelInfo = geminiData.model ? `${geminiData.model}: ` : '';
+      lines.push(`  ${modelInfo}${colorize(`${geminiData.usedPercent}%`, color)}${reset}`);
+    }
   }
 
   return lines;
