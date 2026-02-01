@@ -23,13 +23,15 @@ import type {
 } from './types.js';
 
 const BOX_WIDTH = 40;
+const CHECK_USAGE_TTL_SECONDS = 60;
 
 /**
  * Normalize date string to consistent ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)
  */
-function normalizeToISO(dateStr: string | null): string | null {
+export function normalizeToISO(dateStr: string | null): string | null {
   if (!dateStr) return null;
-  return new Date(dateStr).toISOString();
+  const date = new Date(dateStr);
+  return isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 /**
@@ -280,7 +282,7 @@ function renderZaiSection(
 /**
  * Calculate recommendation based on lowest usage
  */
-function calculateRecommendation(
+export function calculateRecommendation(
   claudeUsage: CLIUsageInfo,
   codexUsage: CLIUsageInfo | null,
   geminiUsage: CLIUsageInfo | null,
@@ -359,7 +361,7 @@ function createErrorResult(name: string): CLIUsageInfo {
  * Parse Claude usage limits
  * Note: API returns utilization as percentage (0-100), not fraction (0-1)
  */
-function parseClaudeUsage(limits: UsageLimits | null): CLIUsageInfo {
+export function parseClaudeUsage(limits: UsageLimits | null): CLIUsageInfo {
   if (!limits) {
     return createErrorResult('Claude');
   }
@@ -378,7 +380,7 @@ function parseClaudeUsage(limits: UsageLimits | null): CLIUsageInfo {
 /**
  * Parse Codex usage limits
  */
-function parseCodexUsage(limits: CodexUsageLimits | null, installed: boolean): CLIUsageInfo {
+export function parseCodexUsage(limits: CodexUsageLimits | null, installed: boolean): CLIUsageInfo {
   if (!installed) return createNotInstalledResult('Codex');
   if (!limits) return createErrorResult('Codex');
 
@@ -398,7 +400,7 @@ function parseCodexUsage(limits: CodexUsageLimits | null, installed: boolean): C
 /**
  * Parse Gemini usage limits
  */
-function parseGeminiUsage(limits: GeminiUsageLimits | null, installed: boolean): CLIUsageInfo {
+export function parseGeminiUsage(limits: GeminiUsageLimits | null, installed: boolean): CLIUsageInfo {
   if (!installed) return createNotInstalledResult('Gemini');
   if (!limits) return createErrorResult('Gemini');
 
@@ -425,7 +427,7 @@ function parseGeminiUsage(limits: GeminiUsageLimits | null, installed: boolean):
 /**
  * Parse z.ai usage limits
  */
-function parseZaiUsage(limits: ZaiUsageLimits | null, installed: boolean): CLIUsageInfo {
+export function parseZaiUsage(limits: ZaiUsageLimits | null, installed: boolean): CLIUsageInfo {
   if (!installed) return createNotInstalledResult('z.ai');
   if (!limits) return createErrorResult('z.ai');
 
@@ -444,10 +446,24 @@ function parseZaiUsage(limits: ZaiUsageLimits | null, installed: boolean): CLIUs
 /**
  * Main function
  */
+/**
+ * Parse --lang argument from command line
+ */
+function parseLangArg(args: string[]): 'en' | 'ko' | null {
+  const langIndex = args.indexOf('--lang');
+  if (langIndex !== -1 && args[langIndex + 1]) {
+    const lang = args[langIndex + 1].toLowerCase();
+    if (lang === 'ko' || lang === 'en') {
+      return lang;
+    }
+  }
+  return null;
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const isJsonMode = args.includes('--json');
-  const lang = detectSystemLanguage();
+  const lang = parseLangArg(args) ?? detectSystemLanguage();
   const t = getTranslationsByLang(lang);
 
   // Check installation status
@@ -459,16 +475,16 @@ async function main(): Promise<void> {
     codexInstalled,
     geminiInstalled,
   ] = await Promise.all([
-    fetchUsageLimits(60),
+    fetchUsageLimits(CHECK_USAGE_TTL_SECONDS),
     isCodexInstalled(),
     isGeminiInstalled(),
   ]);
 
   // Fetch Codex, Gemini, and z.ai only if installed
   const [codexLimits, geminiLimits, zaiLimits] = await Promise.all([
-    codexInstalled ? fetchCodexUsage(60) : Promise.resolve(null),
-    geminiInstalled ? fetchGeminiUsage(60) : Promise.resolve(null),
-    zaiInstalled ? fetchZaiUsage(60) : Promise.resolve(null),
+    codexInstalled ? fetchCodexUsage(CHECK_USAGE_TTL_SECONDS) : Promise.resolve(null),
+    geminiInstalled ? fetchGeminiUsage(CHECK_USAGE_TTL_SECONDS) : Promise.resolve(null),
+    zaiInstalled ? fetchZaiUsage(CHECK_USAGE_TTL_SECONDS) : Promise.resolve(null),
   ]);
 
   // Parse usage data
@@ -560,6 +576,12 @@ async function main(): Promise<void> {
 
 main().catch((err: unknown) => {
   const message = err instanceof Error ? err.message : String(err);
-  console.error('Error:', message);
+  const isJsonMode = process.argv.includes('--json');
+
+  if (isJsonMode) {
+    console.log(JSON.stringify({ error: message }));
+  } else {
+    console.error('Error:', message);
+  }
   process.exit(1);
 });
