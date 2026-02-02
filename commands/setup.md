@@ -126,10 +126,7 @@ This command:
 1. Finds the latest plugin version dynamically
 2. Updates `statusLine` in settings.json with the correct path
 
-**CRITICAL**:
-- NEVER hardcode version numbers like `1.3.0` or `1.4.0` in the path
-- Always use the dynamic lookup to find the latest version
-- The path should look like: `~/.claude/plugins/cache/claude-dashboard/claude-dashboard/X.Y.Z/dist/index.js`
+**IMPORTANT**: After updating the plugin via `/plugin update claude-dashboard`, run `/claude-dashboard:update` to update the statusLine path to the latest version.
 
 ### 4. Show example output
 
