@@ -3,7 +3,8 @@
  * Fetches usage limits from ChatGPT backend API
  */
 
-import { readFile, stat } from 'fs/promises';
+import { readFile, stat, writeFile, mkdir } from 'fs/promises';
+import { execFileSync } from 'child_process';
 import os from 'os';
 import path from 'path';
 import type { CodexUsageLimits, CacheEntry } from '../types.js';
@@ -14,6 +15,8 @@ import { debugLog } from './debug.js';
 const API_TIMEOUT_MS = 5000;
 const CODEX_AUTH_PATH = path.join(os.homedir(), '.codex', 'auth.json');
 const CODEX_CONFIG_PATH = path.join(os.homedir(), '.codex', 'config.toml');
+const CACHE_DIR = path.join(os.homedir(), '.cache', 'claude-dashboard');
+const MODEL_CACHE_PATH = path.join(CACHE_DIR, 'codex-model-cache.json');
 
 /**
  * In-memory cache for Codex usage
@@ -33,6 +36,11 @@ let cachedAuth: { data: CodexAuthData; mtime: number } | null = null;
 interface CodexAuthData {
   accessToken: string;
   accountId: string;
+}
+
+interface CodexModelCache {
+  model: string;
+  configMtime: number;
 }
 
 interface CodexApiResponse {
@@ -58,6 +66,20 @@ interface CodexApiResponse {
     unlimited: boolean;
     balance: string;
   };
+}
+
+/**
+ * Type guard to validate Codex API response structure
+ */
+function isValidCodexApiResponse(data: unknown): data is CodexApiResponse {
+  return (
+    data !== null &&
+    typeof data === 'object' &&
+    'rate_limit' in data &&
+    'plan_type' in data &&
+    typeof (data as Record<string, unknown>).rate_limit === 'object' &&
+    (data as Record<string, unknown>).rate_limit !== null
+  );
 }
 
 /**
@@ -103,19 +125,118 @@ async function getCodexAuth(): Promise<CodexAuthData | null> {
 }
 
 /**
- * Get current Codex model from ~/.codex/config.toml
+ * Get model from ~/.codex/config.toml
  */
-export async function getCodexModel(): Promise<string | null> {
+async function getModelFromConfig(): Promise<string | null> {
   try {
     const raw = await readFile(CODEX_CONFIG_PATH, 'utf-8');
     // Parse simple TOML: model = "value" or model = 'value'
     // Limitations: Only root-level keys supported, no sections [section], no escaped quotes
-    // Falls back to null (displayed as "unknown") on parse failure
     const match = raw.match(/^model\s*=\s*["']([^"']+)["']\s*(?:#.*)?$/m);
     return match ? match[1] : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Get config.toml mtime for cache validation
+ */
+async function getConfigMtime(): Promise<number> {
+  try {
+    const fileStat = await stat(CODEX_CONFIG_PATH);
+    return fileStat.mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Load cached model if valid (config.toml unchanged)
+ */
+async function getCachedModel(currentMtime: number): Promise<string | null> {
+  try {
+    const raw = await readFile(MODEL_CACHE_PATH, 'utf-8');
+    const cache: CodexModelCache = JSON.parse(raw);
+    if (cache.configMtime === currentMtime && cache.model) {
+      debugLog('codex', 'getCachedModel: cache hit', cache.model);
+      return cache.model;
+    }
+    debugLog('codex', 'getCachedModel: cache stale');
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save model to cache
+ */
+async function saveModelCache(model: string, configMtime: number): Promise<void> {
+  try {
+    await mkdir(CACHE_DIR, { recursive: true });
+    const cache: CodexModelCache = { model, configMtime };
+    await writeFile(MODEL_CACHE_PATH, JSON.stringify(cache), 'utf-8');
+    debugLog('codex', 'saveModelCache: saved', model);
+  } catch (err) {
+    debugLog('codex', 'saveModelCache: error', err);
+  }
+}
+
+/**
+ * Detect model by running codex exec and parsing output header
+ */
+function detectModelFromCodexExec(): string | null {
+  try {
+    debugLog('codex', 'detectModelFromCodexExec: running codex exec...');
+    const output = execFileSync('codex', ['exec', '1+1='], {
+      encoding: 'utf-8',
+      timeout: 10000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    // Parse "model: xxx" line from output header
+    const match = output.match(/^model:\s*(.+)$/m);
+    if (match) {
+      const model = match[1].trim();
+      debugLog('codex', 'detectModelFromCodexExec: detected', model);
+      return model;
+    }
+    debugLog('codex', 'detectModelFromCodexExec: no model line found');
+    return null;
+  } catch (err) {
+    debugLog('codex', 'detectModelFromCodexExec: error', err);
+    return null;
+  }
+}
+
+/**
+ * Get current Codex model
+ * Priority: config.toml > cached detection > live detection via codex exec
+ */
+export async function getCodexModel(): Promise<string | null> {
+  // 1. Try config.toml first (explicit user setting)
+  const configModel = await getModelFromConfig();
+  if (configModel) {
+    debugLog('codex', 'getCodexModel: from config', configModel);
+    return configModel;
+  }
+
+  // 2. Check cached model (mtime-based validation)
+  const configMtime = await getConfigMtime();
+  const cachedModel = await getCachedModel(configMtime);
+  if (cachedModel) {
+    return cachedModel;
+  }
+
+  // 3. Detect via codex exec and cache
+  const detectedModel = detectModelFromCodexExec();
+  if (detectedModel) {
+    await saveModelCache(detectedModel, configMtime);
+    return detectedModel;
+  }
+
+  return null;
 }
 
 /**
@@ -188,21 +309,12 @@ async function fetchFromCodexApi(
 
     const data: unknown = await response.json();
 
-    // Validate API response structure
-    if (!data || typeof data !== 'object') {
-      debugLog('codex', 'fetchFromCodexApi: invalid response - not an object');
-      return null;
-    }
-    if (!('rate_limit' in data) || !('plan_type' in data)) {
-      debugLog('codex', 'fetchFromCodexApi: invalid response - missing required fields');
-      return null;
-    }
-    if (typeof (data as any).rate_limit !== 'object' || (data as any).rate_limit === null) {
-      debugLog('codex', 'fetchFromCodexApi: invalid response - rate_limit is not an object');
+    if (!isValidCodexApiResponse(data)) {
+      debugLog('codex', 'fetchFromCodexApi: invalid response structure');
       return null;
     }
 
-    const typedData = data as CodexApiResponse;
+    const typedData = data;
     debugLog('codex', 'fetchFromCodexApi: got data', typedData.plan_type);
     const model = await getCodexModel();
 

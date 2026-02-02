@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // scripts/statusline.ts
-import { readFile as readFile7, stat as stat6 } from "fs/promises";
+import { readFile as readFile7, stat as stat7 } from "fs/promises";
 import { join as join4 } from "path";
 import { homedir as homedir3 } from "os";
 
@@ -145,7 +145,7 @@ function hashToken(token) {
 }
 
 // scripts/version.ts
-var VERSION = "1.7.0";
+var VERSION = "1.8.0";
 
 // scripts/utils/api-client.ts
 var API_TIMEOUT_MS = 5e3;
@@ -837,10 +837,16 @@ var configCountsWidget = {
 };
 
 // scripts/utils/session.ts
-import { readFile as readFile3, mkdir as mkdir2, open } from "fs/promises";
+import { readFile as readFile3, mkdir as mkdir2, open, readdir as readdir3, unlink as unlink2, stat as stat3 } from "fs/promises";
 import { join as join3 } from "path";
 import { homedir as homedir2 } from "os";
 var SESSION_DIR = join3(homedir2(), ".cache", "claude-dashboard", "sessions");
+var SESSION_MAX_AGE_SECONDS = 86400;
+var CLEANUP_INTERVAL_MS2 = 36e5;
+function isErrnoException(error, code) {
+  return error instanceof Error && "code" in error && error.code === code;
+}
+var lastCleanupTime2 = 0;
 var sessionCache = /* @__PURE__ */ new Map();
 var pendingRequests2 = /* @__PURE__ */ new Map();
 function sanitizeSessionId(sessionId) {
@@ -875,8 +881,7 @@ async function getOrCreateSessionStartTimeImpl(safeSessionId) {
     sessionCache.set(safeSessionId, data.startTime);
     return data.startTime;
   } catch (error) {
-    const isNotFound = error instanceof Error && "code" in error && error.code === "ENOENT";
-    if (!isNotFound) {
+    if (!isErrnoException(error, "ENOENT")) {
       debugLog("session", `Failed to read session ${safeSessionId}`, error);
     }
     const startTime = Date.now();
@@ -889,10 +894,11 @@ async function getOrCreateSessionStartTimeImpl(safeSessionId) {
         await fileHandle.close();
       }
       sessionCache.set(safeSessionId, startTime);
+      cleanupExpiredSessions().catch(() => {
+      });
       return startTime;
     } catch (writeError) {
-      const isExists = writeError instanceof Error && "code" in writeError && writeError.code === "EEXIST";
-      if (isExists) {
+      if (isErrnoException(writeError, "EEXIST")) {
         try {
           const content = await readFile3(sessionFile, "utf-8");
           const data = JSON.parse(content);
@@ -903,7 +909,8 @@ async function getOrCreateSessionStartTimeImpl(safeSessionId) {
         } catch {
           debugLog("session", `Failed to read existing session ${safeSessionId} after EEXIST`);
         }
-      } else {
+      }
+      if (!isErrnoException(writeError, "EEXIST")) {
         debugLog("session", `Failed to persist session ${safeSessionId}`, writeError);
       }
       sessionCache.set(safeSessionId, startTime);
@@ -923,6 +930,31 @@ async function getSessionElapsedMinutes(ctx, minMinutes = 1) {
     return null;
   return elapsedMinutes;
 }
+async function cleanupExpiredSessions() {
+  const now = Date.now();
+  if (now - lastCleanupTime2 < CLEANUP_INTERVAL_MS2) {
+    return;
+  }
+  lastCleanupTime2 = now;
+  try {
+    const files = await readdir3(SESSION_DIR);
+    const cutoffTime = now - SESSION_MAX_AGE_SECONDS * 1e3;
+    for (const file of files) {
+      if (!file.endsWith(".json"))
+        continue;
+      try {
+        const filePath = join3(SESSION_DIR, file);
+        const fileStat = await stat3(filePath);
+        if (fileStat.mtimeMs < cutoffTime) {
+          await unlink2(filePath);
+          debugLog("session", `Cleaned up expired session: ${file}`);
+        }
+      } catch {
+      }
+    }
+  } catch {
+  }
+}
 
 // scripts/widgets/session-duration.ts
 var sessionDurationWidget = {
@@ -941,7 +973,7 @@ var sessionDurationWidget = {
 };
 
 // scripts/utils/transcript-parser.ts
-import { readFile as readFile4, stat as stat3 } from "fs/promises";
+import { readFile as readFile4, stat as stat4 } from "fs/promises";
 var cachedTranscript = null;
 function parseJsonlLine(line) {
   try {
@@ -952,7 +984,7 @@ function parseJsonlLine(line) {
 }
 async function parseTranscript(transcriptPath) {
   try {
-    const fileStat = await stat3(transcriptPath);
+    const fileStat = await stat4(transcriptPath);
     const mtime = fileStat.mtimeMs;
     if (cachedTranscript?.path === transcriptPath && cachedTranscript.mtime === mtime) {
       return cachedTranscript.data;
@@ -1272,18 +1304,24 @@ var cacheHitWidget = {
 };
 
 // scripts/utils/codex-client.ts
-import { readFile as readFile5, stat as stat4 } from "fs/promises";
+import { readFile as readFile5, stat as stat5, writeFile as writeFile2, mkdir as mkdir3 } from "fs/promises";
+import { execFileSync as execFileSync3 } from "child_process";
 import os2 from "os";
 import path2 from "path";
 var API_TIMEOUT_MS2 = 5e3;
 var CODEX_AUTH_PATH = path2.join(os2.homedir(), ".codex", "auth.json");
 var CODEX_CONFIG_PATH = path2.join(os2.homedir(), ".codex", "config.toml");
+var CACHE_DIR2 = path2.join(os2.homedir(), ".cache", "claude-dashboard");
+var MODEL_CACHE_PATH = path2.join(CACHE_DIR2, "codex-model-cache.json");
 var codexCacheMap = /* @__PURE__ */ new Map();
 var pendingRequests3 = /* @__PURE__ */ new Map();
 var cachedAuth = null;
+function isValidCodexApiResponse(data) {
+  return data !== null && typeof data === "object" && "rate_limit" in data && "plan_type" in data && typeof data.rate_limit === "object" && data.rate_limit !== null;
+}
 async function isCodexInstalled() {
   try {
-    await stat4(CODEX_AUTH_PATH);
+    await stat5(CODEX_AUTH_PATH);
     return true;
   } catch {
     return false;
@@ -1291,7 +1329,7 @@ async function isCodexInstalled() {
 }
 async function getCodexAuth() {
   try {
-    const fileStat = await stat4(CODEX_AUTH_PATH);
+    const fileStat = await stat5(CODEX_AUTH_PATH);
     if (cachedAuth && cachedAuth.mtime === fileStat.mtimeMs) {
       return cachedAuth.data;
     }
@@ -1309,7 +1347,7 @@ async function getCodexAuth() {
     return null;
   }
 }
-async function getCodexModel() {
+async function getModelFromConfig() {
   try {
     const raw = await readFile5(CODEX_CONFIG_PATH, "utf-8");
     const match = raw.match(/^model\s*=\s*["']([^"']+)["']\s*(?:#.*)?$/m);
@@ -1317,6 +1355,77 @@ async function getCodexModel() {
   } catch {
     return null;
   }
+}
+async function getConfigMtime() {
+  try {
+    const fileStat = await stat5(CODEX_CONFIG_PATH);
+    return fileStat.mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+async function getCachedModel(currentMtime) {
+  try {
+    const raw = await readFile5(MODEL_CACHE_PATH, "utf-8");
+    const cache = JSON.parse(raw);
+    if (cache.configMtime === currentMtime && cache.model) {
+      debugLog("codex", "getCachedModel: cache hit", cache.model);
+      return cache.model;
+    }
+    debugLog("codex", "getCachedModel: cache stale");
+    return null;
+  } catch {
+    return null;
+  }
+}
+async function saveModelCache(model, configMtime) {
+  try {
+    await mkdir3(CACHE_DIR2, { recursive: true });
+    const cache = { model, configMtime };
+    await writeFile2(MODEL_CACHE_PATH, JSON.stringify(cache), "utf-8");
+    debugLog("codex", "saveModelCache: saved", model);
+  } catch (err) {
+    debugLog("codex", "saveModelCache: error", err);
+  }
+}
+function detectModelFromCodexExec() {
+  try {
+    debugLog("codex", "detectModelFromCodexExec: running codex exec...");
+    const output = execFileSync3("codex", ["exec", "1+1="], {
+      encoding: "utf-8",
+      timeout: 1e4,
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    const match = output.match(/^model:\s*(.+)$/m);
+    if (match) {
+      const model = match[1].trim();
+      debugLog("codex", "detectModelFromCodexExec: detected", model);
+      return model;
+    }
+    debugLog("codex", "detectModelFromCodexExec: no model line found");
+    return null;
+  } catch (err) {
+    debugLog("codex", "detectModelFromCodexExec: error", err);
+    return null;
+  }
+}
+async function getCodexModel() {
+  const configModel = await getModelFromConfig();
+  if (configModel) {
+    debugLog("codex", "getCodexModel: from config", configModel);
+    return configModel;
+  }
+  const configMtime = await getConfigMtime();
+  const cachedModel = await getCachedModel(configMtime);
+  if (cachedModel) {
+    return cachedModel;
+  }
+  const detectedModel = detectModelFromCodexExec();
+  if (detectedModel) {
+    await saveModelCache(detectedModel, configMtime);
+    return detectedModel;
+  }
+  return null;
 }
 async function fetchCodexUsage(ttlSeconds = 60) {
   const auth = await getCodexAuth();
@@ -1365,16 +1474,8 @@ async function fetchFromCodexApi(auth) {
       return null;
     }
     const data = await response.json();
-    if (!data || typeof data !== "object") {
-      debugLog("codex", "fetchFromCodexApi: invalid response - not an object");
-      return null;
-    }
-    if (!("rate_limit" in data) || !("plan_type" in data)) {
-      debugLog("codex", "fetchFromCodexApi: invalid response - missing required fields");
-      return null;
-    }
-    if (typeof data.rate_limit !== "object" || data.rate_limit === null) {
-      debugLog("codex", "fetchFromCodexApi: invalid response - rate_limit is not an object");
+    if (!isValidCodexApiResponse(data)) {
+      debugLog("codex", "fetchFromCodexApi: invalid response structure");
       return null;
     }
     const typedData = data;
@@ -1466,8 +1567,8 @@ var codexUsageWidget = {
 };
 
 // scripts/utils/gemini-client.ts
-import { readFile as readFile6, writeFile as writeFile2, stat as stat5 } from "fs/promises";
-import { execFileSync as execFileSync3 } from "child_process";
+import { readFile as readFile6, writeFile as writeFile3, stat as stat6 } from "fs/promises";
+import { execFileSync as execFileSync4 } from "child_process";
 import os3 from "os";
 import path3 from "path";
 var API_TIMEOUT_MS3 = 5e3;
@@ -1497,7 +1598,7 @@ async function isGeminiInstalled() {
       return true;
     }
     const oauthPath = path3.join(getGeminiDir(), OAUTH_CREDS_FILE);
-    await stat5(oauthPath);
+    await stat6(oauthPath);
     return true;
   } catch {
     return false;
@@ -1508,7 +1609,7 @@ async function getTokenFromKeychain() {
     return null;
   }
   try {
-    const result = execFileSync3(
+    const result = execFileSync4(
       "security",
       ["find-generic-password", "-s", KEYCHAIN_SERVICE_NAME, "-a", MAIN_ACCOUNT_KEY, "-w"],
       { encoding: "utf-8", timeout: 3e3, stdio: ["pipe", "pipe", "pipe"] }
@@ -1532,7 +1633,7 @@ async function getTokenFromKeychain() {
 async function getCredentialsFromFile2() {
   try {
     const oauthPath = path3.join(getGeminiDir(), OAUTH_CREDS_FILE);
-    const fileStat = await stat5(oauthPath);
+    const fileStat = await stat6(oauthPath);
     if (cachedCredentials && cachedCredentials.mtime === fileStat.mtimeMs) {
       return cachedCredentials.data;
     }
@@ -1639,7 +1740,7 @@ async function saveCredentialsToFile(credentials, rawResponse) {
       token_type: rawResponse.token_type || "Bearer",
       scope: rawResponse.scope || existingData.scope
     };
-    await writeFile2(oauthPath, JSON.stringify(newData, null, 2), { mode: 384 });
+    await writeFile3(oauthPath, JSON.stringify(newData, null, 2), { mode: 384 });
     debugLog("gemini", "saveCredentialsToFile: saved");
   } catch (err) {
     debugLog("gemini", "saveCredentialsToFile: error", err);
@@ -1666,7 +1767,7 @@ var PROJECT_ID_CACHE_TTL_MS = 5 * 60 * 1e3;
 async function getGeminiSettings() {
   try {
     const settingsPath = path3.join(getGeminiDir(), SETTINGS_FILE);
-    const fileStat = await stat5(settingsPath);
+    const fileStat = await stat6(settingsPath);
     if (cachedSettings && cachedSettings.mtime === fileStat.mtimeMs) {
       return cachedSettings.data;
     }
@@ -2223,7 +2324,7 @@ async function readStdin() {
 }
 async function loadConfig() {
   try {
-    const fileStat = await stat6(CONFIG_PATH);
+    const fileStat = await stat7(CONFIG_PATH);
     const mtime = fileStat.mtimeMs;
     if (configCache?.mtime === mtime) {
       return configCache.config;

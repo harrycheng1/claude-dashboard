@@ -2,13 +2,31 @@
  * Session utilities - shared session time management
  */
 
-import { readFile, mkdir, open } from 'fs/promises';
+import { readFile, mkdir, open, readdir, unlink, stat } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 import type { WidgetContext } from '../types.js';
 import { debugLog } from './debug.js';
 
 const SESSION_DIR = join(homedir(), '.cache', 'claude-dashboard', 'sessions');
+const SESSION_MAX_AGE_SECONDS = 86400; // 24 hours - cleanup files older than this
+const CLEANUP_INTERVAL_MS = 3600000; // 1 hour - minimum interval between cleanups
+
+/**
+ * Type guard to check if an error is an ErrnoException with a specific code
+ */
+function isErrnoException(error: unknown, code: string): boolean {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    (error as NodeJS.ErrnoException).code === code
+  );
+}
+
+/**
+ * Last cleanup timestamp for time-based throttling
+ */
+let lastCleanupTime = 0;
 
 // In-memory cache to avoid repeated file I/O during a single process lifecycle
 const sessionCache = new Map<string, number>();
@@ -72,12 +90,7 @@ async function getOrCreateSessionStartTimeImpl(safeSessionId: string): Promise<n
     return data.startTime;
   } catch (error: unknown) {
     // Check if file simply doesn't exist (expected case)
-    const isNotFound =
-      error instanceof Error &&
-      'code' in error &&
-      (error as NodeJS.ErrnoException).code === 'ENOENT';
-
-    if (!isNotFound) {
+    if (!isErrnoException(error, 'ENOENT')) {
       // Unexpected error - log for debugging
       debugLog('session', `Failed to read session ${safeSessionId}`, error);
     }
@@ -99,15 +112,14 @@ async function getOrCreateSessionStartTimeImpl(safeSessionId: string): Promise<n
 
       // Cache result before returning
       sessionCache.set(safeSessionId, startTime);
+
+      // Probabilistically clean up old session files (fire-and-forget)
+      cleanupExpiredSessions().catch(() => {});
+
       return startTime;
     } catch (writeError: unknown) {
       // If file was created by another process (EEXIST), read it instead
-      const isExists =
-        writeError instanceof Error &&
-        'code' in writeError &&
-        (writeError as NodeJS.ErrnoException).code === 'EEXIST';
-
-      if (isExists) {
+      if (isErrnoException(writeError, 'EEXIST')) {
         try {
           const content = await readFile(sessionFile, 'utf-8');
           const data = JSON.parse(content);
@@ -118,7 +130,10 @@ async function getOrCreateSessionStartTimeImpl(safeSessionId: string): Promise<n
         } catch {
           debugLog('session', `Failed to read existing session ${safeSessionId} after EEXIST`);
         }
-      } else {
+      }
+
+      // Log non-EEXIST write errors
+      if (!isErrnoException(writeError, 'EEXIST')) {
         debugLog('session', `Failed to persist session ${safeSessionId}`, writeError);
       }
 
@@ -151,4 +166,41 @@ export async function getSessionElapsedMinutes(
 
   if (elapsedMinutes < minMinutes) return null;
   return elapsedMinutes;
+}
+
+/**
+ * Clean up expired session files from disk
+ * Runs at most once per hour (time-based throttling)
+ */
+async function cleanupExpiredSessions(): Promise<void> {
+  const now = Date.now();
+
+  // Skip if last cleanup was less than 1 hour ago
+  if (now - lastCleanupTime < CLEANUP_INTERVAL_MS) {
+    return;
+  }
+  lastCleanupTime = now;
+
+  try {
+    const files = await readdir(SESSION_DIR);
+    const cutoffTime = now - SESSION_MAX_AGE_SECONDS * 1000;
+
+    for (const file of files) {
+      if (!file.endsWith('.json')) continue;
+
+      try {
+        const filePath = join(SESSION_DIR, file);
+        const fileStat = await stat(filePath);
+
+        if (fileStat.mtimeMs < cutoffTime) {
+          await unlink(filePath);
+          debugLog('session', `Cleaned up expired session: ${file}`);
+        }
+      } catch {
+        // Ignore individual file errors
+      }
+    }
+  } catch {
+    // Ignore cleanup errors (directory might not exist yet)
+  }
 }
