@@ -11,10 +11,56 @@ import { hashToken } from './hash.js';
 const API_TIMEOUT_MS = 5000;
 
 /**
- * Convert value to safe percentage (0-100 range)
+ * Clamp percentage to safe 0-100 range
  */
-function toSafePercent(value: number): number {
-  return Math.min(100, Math.max(0, Math.round(value * 100)));
+export function clampPercent(value: number): number {
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
+
+/**
+ * Calculate usage percentage from current value and remaining
+ * Returns null if total is zero (to avoid division by zero)
+ */
+export function calculateUsagePercent(currentValue: number, remaining: number): number | null {
+  const total = currentValue + remaining;
+  if (total <= 0) {
+    return null;
+  }
+  return clampPercent((currentValue / total) * 100);
+}
+
+/**
+ * Parse usage percentage from a limit object
+ * Priority: percentage > currentValue/remaining > currentValue/usage
+ *
+ * Note: `usage` field is the total limit (not percentage), per CodexBar reference impl:
+ * - usage: total limit (한도)
+ * - currentValue: current usage amount
+ * - remaining: remaining amount
+ * - percentage: API-returned percentage (0-100)
+ */
+export function parseUsagePercent(limit: {
+  percentage?: number;
+  usage?: number;  // usage = total limit, NOT percentage
+  currentValue?: number;
+  remaining?: number;
+}): number | null {
+  // 1. Prefer direct percentage field
+  if (limit.percentage !== undefined) {
+    return clampPercent(limit.percentage);
+  }
+
+  // 2. Calculate from currentValue and remaining
+  if (limit.currentValue !== undefined && limit.remaining !== undefined) {
+    return calculateUsagePercent(limit.currentValue, limit.remaining);
+  }
+
+  // 3. Calculate from currentValue and usage (usage = total limit)
+  if (limit.currentValue !== undefined && limit.usage !== undefined && limit.usage > 0) {
+    return clampPercent((limit.currentValue / limit.usage) * 100);
+  }
+
+  return null;
 }
 
 /**
@@ -42,6 +88,8 @@ interface ZaiQuotaResponse {
       type: string;
       usage?: number;
       currentValue?: number;
+      remaining?: number;
+      percentage?: number;
       nextResetTime?: number;
     }>;
   };
@@ -182,23 +230,17 @@ async function fetchFromZaiApi(
     let mcpResetAt: number | null = null;
 
     for (const limit of limits) {
+      const resetTime = limit.nextResetTime;
+
       if (limit.type === 'TOKENS_LIMIT') {
-        // Token usage: currentValue is used amount (0-1 fraction)
-        if (limit.currentValue !== undefined) {
-          tokensPercent = toSafePercent(limit.currentValue);
-        }
-        if (limit.nextResetTime !== undefined) {
-          tokensResetAt = limit.nextResetTime;
+        tokensPercent = parseUsagePercent(limit);
+        if (resetTime !== undefined) {
+          tokensResetAt = resetTime;
         }
       } else if (limit.type === 'TIME_LIMIT') {
-        // MCP usage: usage or currentValue field contains fraction (0-1)
-        if (limit.usage !== undefined) {
-          mcpPercent = toSafePercent(limit.usage);
-        } else if (limit.currentValue !== undefined) {
-          mcpPercent = toSafePercent(limit.currentValue);
-        }
-        if (limit.nextResetTime !== undefined) {
-          mcpResetAt = limit.nextResetTime;
+        mcpPercent = parseUsagePercent(limit);
+        if (resetTime !== undefined) {
+          mcpResetAt = resetTime;
         }
       }
     }
