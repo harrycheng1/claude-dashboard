@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 // scripts/statusline.ts
-import { readFile as readFile7, stat as stat7 } from "fs/promises";
-import { join as join4 } from "path";
-import { homedir as homedir3 } from "os";
+import { readFile as readFile8, stat as stat7 } from "fs/promises";
+import { join as join5 } from "path";
+import { homedir as homedir4 } from "os";
 
 // scripts/types.ts
 var DISPLAY_PRESETS = {
@@ -432,6 +432,11 @@ function debugLog(context, message, error) {
   }
 }
 
+// scripts/widgets/model.ts
+import { readFile as readFile3 } from "fs/promises";
+import { join as join2 } from "path";
+import { homedir as homedir2 } from "os";
+
 // scripts/utils/formatters.ts
 function formatTokens(tokens) {
   if (tokens >= 1e6) {
@@ -529,20 +534,43 @@ function getZaiApiBaseUrl() {
 }
 
 // scripts/widgets/model.ts
+var VALID_NON_DEFAULT_EFFORTS = /* @__PURE__ */ new Set(["medium", "low"]);
+function isNonDefaultEffort(value) {
+  return VALID_NON_DEFAULT_EFFORTS.has(value);
+}
+async function getEffortLevel() {
+  try {
+    const settingsPath = join2(homedir2(), ".claude", "settings.json");
+    const content = await readFile3(settingsPath, "utf-8");
+    const settings = JSON.parse(content);
+    if (isNonDefaultEffort(settings.effortLevel)) {
+      return settings.effortLevel;
+    }
+  } catch {
+  }
+  const envEffort = process.env.CLAUDE_CODE_EFFORT_LEVEL;
+  if (isNonDefaultEffort(envEffort)) {
+    return envEffort;
+  }
+  return "high";
+}
 var modelWidget = {
   id: "model",
   name: "Model",
   async getData(ctx) {
     const { model } = ctx.stdin;
+    const effortLevel = await getEffortLevel();
     return {
       id: model?.id || "",
-      displayName: model?.display_name || "-"
+      displayName: model?.display_name || "-",
+      effortLevel
     };
   },
   render(data) {
     const shortName = shortenModelName(data.displayName);
     const icon = isZaiProvider() ? "\u{1F7E0}" : "\u{1F916}";
-    return `${COLORS.pastelCyan}${icon} ${shortName}${RESET}`;
+    const effortSuffix = data.effortLevel && shortName === "Opus" ? `(${data.effortLevel[0].toUpperCase()})` : "";
+    return `${COLORS.pastelCyan}${icon} ${shortName}${effortSuffix}${RESET}`;
   }
 };
 
@@ -750,7 +778,7 @@ var projectInfoWidget = {
 
 // scripts/widgets/config-counts.ts
 import { readdir as readdir2, access } from "fs/promises";
-import { join as join2 } from "path";
+import { join as join3 } from "path";
 import { constants } from "fs";
 var CONFIG_CACHE_TTL_MS = 3e4;
 var configCountsCache = null;
@@ -775,27 +803,27 @@ async function countFiles(dir, pattern) {
 }
 async function countClaudeMd(projectDir) {
   let count = 0;
-  if (await pathExists(join2(projectDir, "CLAUDE.md"))) {
+  if (await pathExists(join3(projectDir, "CLAUDE.md"))) {
     count++;
   }
-  if (await pathExists(join2(projectDir, ".claude", "CLAUDE.md"))) {
+  if (await pathExists(join3(projectDir, ".claude", "CLAUDE.md"))) {
     count++;
   }
   return count;
 }
 async function countMcps(projectDir) {
-  const { readFile: readFile8 } = await import("fs/promises");
+  const { readFile: readFile9 } = await import("fs/promises");
   const homeDir = process.env.HOME || "";
   const mcpPaths = [
-    { path: join2(projectDir, ".claude", "mcp.json"), key: "mcpServers" },
-    { path: join2(homeDir, ".claude.json"), key: "mcpServers" },
-    { path: join2(homeDir, ".config", "claude-code", "mcp.json"), key: "mcpServers" }
+    { path: join3(projectDir, ".claude", "mcp.json"), key: "mcpServers" },
+    { path: join3(homeDir, ".claude.json"), key: "mcpServers" },
+    { path: join3(homeDir, ".config", "claude-code", "mcp.json"), key: "mcpServers" }
   ];
   let totalCount = 0;
   for (const { path: path4, key } of mcpPaths) {
     if (await pathExists(path4)) {
       try {
-        const content = await readFile8(path4, "utf-8");
+        const content = await readFile9(path4, "utf-8");
         const config = JSON.parse(content);
         totalCount += Object.keys(config[key] || {}).length;
       } catch {
@@ -815,12 +843,12 @@ var configCountsWidget = {
     if (configCountsCache?.projectDir === currentDir && Date.now() - configCountsCache.timestamp < CONFIG_CACHE_TTL_MS) {
       return configCountsCache.data;
     }
-    const claudeDir = join2(currentDir, ".claude");
+    const claudeDir = join3(currentDir, ".claude");
     const [claudeMd, rules, mcps, hooks] = await Promise.all([
       countClaudeMd(currentDir),
-      countFiles(join2(claudeDir, "rules")),
+      countFiles(join3(claudeDir, "rules")),
       countMcps(currentDir),
-      countFiles(join2(claudeDir, "hooks"))
+      countFiles(join3(claudeDir, "hooks"))
     ]);
     const data = claudeMd === 0 && rules === 0 && mcps === 0 && hooks === 0 ? null : { claudeMd, rules, mcps, hooks };
     configCountsCache = { projectDir: currentDir, data, timestamp: Date.now() };
@@ -846,10 +874,10 @@ var configCountsWidget = {
 };
 
 // scripts/utils/session.ts
-import { readFile as readFile3, mkdir as mkdir2, open, readdir as readdir3, unlink as unlink2, stat as stat3 } from "fs/promises";
-import { join as join3 } from "path";
-import { homedir as homedir2 } from "os";
-var SESSION_DIR = join3(homedir2(), ".cache", "claude-dashboard", "sessions");
+import { readFile as readFile4, mkdir as mkdir2, open, readdir as readdir3, unlink as unlink2, stat as stat3 } from "fs/promises";
+import { join as join4 } from "path";
+import { homedir as homedir3 } from "os";
+var SESSION_DIR = join4(homedir3(), ".cache", "claude-dashboard", "sessions");
 var SESSION_MAX_AGE_SECONDS = 86400;
 var CLEANUP_INTERVAL_MS2 = 36e5;
 function isErrnoException(error, code) {
@@ -879,9 +907,9 @@ async function getSessionStartTime(sessionId) {
   }
 }
 async function getOrCreateSessionStartTimeImpl(safeSessionId) {
-  const sessionFile = join3(SESSION_DIR, `${safeSessionId}.json`);
+  const sessionFile = join4(SESSION_DIR, `${safeSessionId}.json`);
   try {
-    const content = await readFile3(sessionFile, "utf-8");
+    const content = await readFile4(sessionFile, "utf-8");
     const data = JSON.parse(content);
     if (typeof data.startTime !== "number") {
       debugLog("session", `Invalid session file format for ${safeSessionId}`);
@@ -909,7 +937,7 @@ async function getOrCreateSessionStartTimeImpl(safeSessionId) {
     } catch (writeError) {
       if (isErrnoException(writeError, "EEXIST")) {
         try {
-          const content = await readFile3(sessionFile, "utf-8");
+          const content = await readFile4(sessionFile, "utf-8");
           const data = JSON.parse(content);
           if (typeof data.startTime === "number") {
             sessionCache.set(safeSessionId, data.startTime);
@@ -952,7 +980,7 @@ async function cleanupExpiredSessions() {
       if (!file.endsWith(".json"))
         continue;
       try {
-        const filePath = join3(SESSION_DIR, file);
+        const filePath = join4(SESSION_DIR, file);
         const fileStat = await stat3(filePath);
         if (fileStat.mtimeMs < cutoffTime) {
           await unlink2(filePath);
@@ -982,7 +1010,7 @@ var sessionDurationWidget = {
 };
 
 // scripts/utils/transcript-parser.ts
-import { readFile as readFile4, stat as stat4 } from "fs/promises";
+import { readFile as readFile5, stat as stat4 } from "fs/promises";
 var cachedTranscript = null;
 function parseJsonlLine(line) {
   try {
@@ -998,7 +1026,7 @@ async function parseTranscript(transcriptPath) {
     if (cachedTranscript?.path === transcriptPath && cachedTranscript.mtime === mtime) {
       return cachedTranscript.data;
     }
-    const content = await readFile4(transcriptPath, "utf-8");
+    const content = await readFile5(transcriptPath, "utf-8");
     const lines = content.trim().split("\n").filter(Boolean);
     const entries = [];
     for (const line of lines) {
@@ -1313,7 +1341,7 @@ var cacheHitWidget = {
 };
 
 // scripts/utils/codex-client.ts
-import { readFile as readFile5, stat as stat5, writeFile as writeFile2, mkdir as mkdir3 } from "fs/promises";
+import { readFile as readFile6, stat as stat5, writeFile as writeFile2, mkdir as mkdir3 } from "fs/promises";
 import { execFileSync as execFileSync3 } from "child_process";
 import os2 from "os";
 import path2 from "path";
@@ -1342,7 +1370,7 @@ async function getCodexAuth() {
     if (cachedAuth && cachedAuth.mtime === fileStat.mtimeMs) {
       return cachedAuth.data;
     }
-    const raw = await readFile5(CODEX_AUTH_PATH, "utf-8");
+    const raw = await readFile6(CODEX_AUTH_PATH, "utf-8");
     const json = JSON.parse(raw);
     const accessToken = json?.tokens?.access_token;
     const accountId = json?.tokens?.account_id;
@@ -1358,7 +1386,7 @@ async function getCodexAuth() {
 }
 async function getModelFromConfig() {
   try {
-    const raw = await readFile5(CODEX_CONFIG_PATH, "utf-8");
+    const raw = await readFile6(CODEX_CONFIG_PATH, "utf-8");
     const match = raw.match(/^model\s*=\s*["']([^"']+)["']\s*(?:#.*)?$/m);
     return match ? match[1] : null;
   } catch {
@@ -1375,7 +1403,7 @@ async function getConfigMtime() {
 }
 async function getCachedModel(currentMtime) {
   try {
-    const raw = await readFile5(MODEL_CACHE_PATH, "utf-8");
+    const raw = await readFile6(MODEL_CACHE_PATH, "utf-8");
     const cache = JSON.parse(raw);
     if (cache.configMtime === currentMtime && cache.model) {
       debugLog("codex", "getCachedModel: cache hit", cache.model);
@@ -1576,7 +1604,7 @@ var codexUsageWidget = {
 };
 
 // scripts/utils/gemini-client.ts
-import { readFile as readFile6, writeFile as writeFile3, stat as stat6 } from "fs/promises";
+import { readFile as readFile7, writeFile as writeFile3, stat as stat6 } from "fs/promises";
 import { execFileSync as execFileSync4 } from "child_process";
 import os3 from "os";
 import path3 from "path";
@@ -1646,7 +1674,7 @@ async function getCredentialsFromFile2() {
     if (cachedCredentials && cachedCredentials.mtime === fileStat.mtimeMs) {
       return cachedCredentials.data;
     }
-    const raw = await readFile6(oauthPath, "utf-8");
+    const raw = await readFile7(oauthPath, "utf-8");
     const json = JSON.parse(raw);
     const accessToken = json?.access_token;
     if (!accessToken) {
@@ -1737,7 +1765,7 @@ async function saveCredentialsToFile(credentials, rawResponse) {
     const oauthPath = path3.join(getGeminiDir(), OAUTH_CREDS_FILE);
     let existingData = {};
     try {
-      const raw = await readFile6(oauthPath, "utf-8");
+      const raw = await readFile7(oauthPath, "utf-8");
       existingData = JSON.parse(raw);
     } catch {
     }
@@ -1780,7 +1808,7 @@ async function getGeminiSettings() {
     if (cachedSettings && cachedSettings.mtime === fileStat.mtimeMs) {
       return cachedSettings.data;
     }
-    const raw = await readFile6(settingsPath, "utf-8");
+    const raw = await readFile7(settingsPath, "utf-8");
     const json = JSON.parse(raw);
     const data = {
       cloudaicompanionProject: json?.cloudaicompanionProject,
@@ -2331,7 +2359,7 @@ async function formatOutput(ctx) {
 }
 
 // scripts/statusline.ts
-var CONFIG_PATH = join4(homedir3(), ".claude", "claude-dashboard.local.json");
+var CONFIG_PATH = join5(homedir4(), ".claude", "claude-dashboard.local.json");
 var configCache = null;
 async function readStdin() {
   try {
@@ -2352,7 +2380,7 @@ async function loadConfig() {
     if (configCache?.mtime === mtime) {
       return configCache.config;
     }
-    const content = await readFile7(CONFIG_PATH, "utf-8");
+    const content = await readFile8(CONFIG_PATH, "utf-8");
     const userConfig = JSON.parse(content);
     const config = {
       ...DEFAULT_CONFIG,
