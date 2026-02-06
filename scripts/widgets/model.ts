@@ -66,7 +66,7 @@ export const modelWidget: Widget<ModelData> = {
     const icon = isZaiProvider() ? '🟠' : '🤖';
 
     // Show effort suffix for Opus: (H), (M), (L)
-    const effortSuffix = data.effortLevel && shortName === 'Opus'
+    const effortSuffix = shortName === 'Opus'
       ? `(${data.effortLevel[0].toUpperCase()})`
       : '';
 

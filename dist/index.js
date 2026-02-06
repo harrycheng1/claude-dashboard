@@ -575,7 +575,7 @@ var modelWidget = {
   render(data) {
     const shortName = shortenModelName(data.displayName);
     const icon = isZaiProvider() ? "\u{1F7E0}" : "\u{1F916}";
-    const effortSuffix = data.effortLevel && shortName === "Opus" ? `(${data.effortLevel[0].toUpperCase()})` : "";
+    const effortSuffix = shortName === "Opus" ? `(${data.effortLevel[0].toUpperCase()})` : "";
     return `${COLORS.pastelCyan}${icon} ${shortName}${effortSuffix}${RESET}`;
   }
 };

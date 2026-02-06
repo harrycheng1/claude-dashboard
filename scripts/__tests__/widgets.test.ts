@@ -105,7 +105,7 @@ describe('widgets', () => {
 
     it('should render shortened model name', () => {
       const ctx = createContext();
-      const data = { id: 'claude-sonnet', displayName: 'Claude 3.5 Sonnet' };
+      const data = { id: 'claude-sonnet', displayName: 'Claude 3.5 Sonnet', effortLevel: 'high' as const };
       const result = modelWidget.render(data, ctx);
 
       expect(result).toContain('Sonnet');
@@ -114,7 +114,7 @@ describe('widgets', () => {
 
     it('should shorten Opus model name', () => {
       const ctx = createContext();
-      const data = { id: 'claude-opus', displayName: 'Claude Opus 4' };
+      const data = { id: 'claude-opus', displayName: 'Claude Opus 4', effortLevel: 'high' as const };
       const result = modelWidget.render(data, ctx);
 
       expect(result).toContain('Opus');

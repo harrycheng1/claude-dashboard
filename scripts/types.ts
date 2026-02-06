@@ -205,7 +205,7 @@ export type EffortLevel = 'high' | 'medium' | 'low';
 export interface ModelData {
   id: string;
   displayName: string;
-  effortLevel?: EffortLevel;
+  effortLevel: EffortLevel;
 }
 
 export interface ContextData {
