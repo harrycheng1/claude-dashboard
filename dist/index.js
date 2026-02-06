@@ -12,11 +12,11 @@ var DISPLAY_PRESETS = {
   ],
   normal: [
     ["model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet", "zaiUsage"],
-    ["projectInfo", "sessionDuration", "burnRate", "todoProgress"]
+    ["projectInfo", "sessionId", "sessionDuration", "burnRate", "todoProgress"]
   ],
   detailed: [
     ["model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet", "zaiUsage"],
-    ["projectInfo", "sessionDuration", "burnRate", "depletionTime", "todoProgress"],
+    ["projectInfo", "sessionId", "sessionDuration", "burnRate", "depletionTime", "todoProgress"],
     ["configCounts", "toolActivity", "agentStatus", "cacheHit"],
     ["codexUsage", "geminiUsage"]
   ]
@@ -336,6 +336,16 @@ var en_default = {
     cache: "Cache",
     toLimit: "to"
   },
+  sessions: {
+    title: "Claude Sessions",
+    messages: "messages",
+    modified: "Modified",
+    noSessions: "No sessions found",
+    open: "Open",
+    copied: "Copied!",
+    serverStarted: "Server started at",
+    serverStopping: "Server stopping (idle timeout)"
+  },
   checkUsage: {
     title: "CLI Usage Dashboard",
     recommendation: "Recommendation",
@@ -384,6 +394,16 @@ var ko_default = {
     burnRate: "\uC18C\uBAA8\uC728",
     cache: "\uCE90\uC2DC",
     toLimit: "\uD6C4"
+  },
+  sessions: {
+    title: "Claude \uC138\uC158 \uBAA9\uB85D",
+    messages: "\uBA54\uC2DC\uC9C0",
+    modified: "\uC218\uC815",
+    noSessions: "\uC138\uC158\uC774 \uC5C6\uC2B5\uB2C8\uB2E4",
+    open: "\uC5F4\uAE30",
+    copied: "\uBCF5\uC0AC\uB428!",
+    serverStarted: "\uC11C\uBC84 \uC2DC\uC791:",
+    serverStopping: "\uC11C\uBC84 \uC885\uB8CC (\uBE44\uD65C\uC131 \uD0C0\uC784\uC544\uC6C3)"
   },
   checkUsage: {
     title: "CLI \uC0AC\uC6A9\uB7C9 \uB300\uC2DC\uBCF4\uB4DC",
@@ -2292,6 +2312,33 @@ var zaiUsageWidget = {
   }
 };
 
+// scripts/widgets/session-id.ts
+async function getSessionIdData(ctx) {
+  const sessionId = ctx.stdin.session_id;
+  if (!sessionId)
+    return null;
+  return {
+    sessionId,
+    shortId: sessionId.slice(0, 8)
+  };
+}
+var sessionIdWidget = {
+  id: "sessionId",
+  name: "Session ID (Short)",
+  getData: getSessionIdData,
+  render(data) {
+    return colorize(`\u{1F511} ${data.shortId}`, COLORS.dim);
+  }
+};
+var sessionIdFullWidget = {
+  id: "sessionIdFull",
+  name: "Session ID (Full)",
+  getData: getSessionIdData,
+  render(data) {
+    return colorize(`\u{1F511} ${data.sessionId}`, COLORS.dim);
+  }
+};
+
 // scripts/widgets/index.ts
 var widgetRegistry = /* @__PURE__ */ new Map([
   ["model", modelWidget],
@@ -2312,7 +2359,9 @@ var widgetRegistry = /* @__PURE__ */ new Map([
   ["codexUsage", codexUsageWidget],
   ["geminiUsage", geminiUsageWidget],
   ["geminiUsageAll", geminiUsageAllWidget],
-  ["zaiUsage", zaiUsageWidget]
+  ["zaiUsage", zaiUsageWidget],
+  ["sessionId", sessionIdWidget],
+  ["sessionIdFull", sessionIdFullWidget]
 ]);
 function getWidget(id) {
   return widgetRegistry.get(id);
