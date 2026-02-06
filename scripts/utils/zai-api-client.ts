@@ -13,7 +13,7 @@ const API_TIMEOUT_MS = 5000;
 /**
  * Clamp percentage to safe 0-100 range
  */
-function clampPercent(value: number): number {
+export function clampPercent(value: number): number {
   return Math.min(100, Math.max(0, Math.round(value)));
 }
 
@@ -21,7 +21,7 @@ function clampPercent(value: number): number {
  * Calculate usage percentage from current value and remaining
  * Returns null if total is zero (to avoid division by zero)
  */
-function calculateUsagePercent(currentValue: number, remaining: number): number | null {
+export function calculateUsagePercent(currentValue: number, remaining: number): number | null {
   const total = currentValue + remaining;
   if (total <= 0) {
     return null;
@@ -39,7 +39,7 @@ function calculateUsagePercent(currentValue: number, remaining: number): number 
  * - remaining: remaining amount
  * - percentage: API-returned percentage (0-100)
  */
-function parseUsagePercent(limit: {
+export function parseUsagePercent(limit: {
   percentage?: number;
   usage?: number;  // usage = total limit, NOT percentage
   currentValue?: number;
