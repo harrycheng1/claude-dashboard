@@ -145,7 +145,7 @@ function hashToken(token) {
 }
 
 // scripts/version.ts
-var VERSION = "1.9.1";
+var VERSION = "1.10.0";
 
 // scripts/utils/api-client.ts
 var API_TIMEOUT_MS = 5e3;
@@ -336,16 +336,6 @@ var en_default = {
     cache: "Cache",
     toLimit: "to"
   },
-  sessions: {
-    title: "Claude Sessions",
-    messages: "messages",
-    modified: "Modified",
-    noSessions: "No sessions found",
-    open: "Open",
-    copied: "Copied!",
-    serverStarted: "Server started at",
-    serverStopping: "Server stopping (idle timeout)"
-  },
   checkUsage: {
     title: "CLI Usage Dashboard",
     recommendation: "Recommendation",
@@ -394,16 +384,6 @@ var ko_default = {
     burnRate: "\uC18C\uBAA8\uC728",
     cache: "\uCE90\uC2DC",
     toLimit: "\uD6C4"
-  },
-  sessions: {
-    title: "Claude \uC138\uC158 \uBAA9\uB85D",
-    messages: "\uBA54\uC2DC\uC9C0",
-    modified: "\uC218\uC815",
-    noSessions: "\uC138\uC158\uC774 \uC5C6\uC2B5\uB2C8\uB2E4",
-    open: "\uC5F4\uAE30",
-    copied: "\uBCF5\uC0AC\uB428!",
-    serverStarted: "\uC11C\uBC84 \uC2DC\uC791:",
-    serverStopping: "\uC11C\uBC84 \uC885\uB8CC (\uBE44\uD65C\uC131 \uD0C0\uC784\uC544\uC6C3)"
   },
   checkUsage: {
     title: "CLI \uC0AC\uC6A9\uB7C9 \uB300\uC2DC\uBCF4\uB4DC",
