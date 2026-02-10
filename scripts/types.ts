@@ -42,6 +42,8 @@ export type WidgetId =
   | 'projectInfo'
   | 'configCounts'
   | 'sessionDuration'
+  | 'sessionId'
+  | 'sessionIdFull'
   | 'toolActivity'
   | 'agentStatus'
   | 'todoProgress'
@@ -71,11 +73,11 @@ export const DISPLAY_PRESETS: Record<Exclude<DisplayMode, 'custom'>, WidgetId[][
   ],
   normal: [
     ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet', 'zaiUsage'],
-    ['projectInfo', 'sessionDuration', 'burnRate', 'todoProgress'],
+    ['projectInfo', 'sessionId', 'sessionDuration', 'burnRate', 'todoProgress'],
   ],
   detailed: [
     ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet', 'zaiUsage'],
-    ['projectInfo', 'sessionDuration', 'burnRate', 'depletionTime', 'todoProgress'],
+    ['projectInfo', 'sessionId', 'sessionDuration', 'burnRate', 'depletionTime', 'todoProgress'],
     ['configCounts', 'toolActivity', 'agentStatus', 'cacheHit'],
     ['codexUsage', 'geminiUsage'],
   ],
@@ -365,6 +367,14 @@ export interface GeminiUsageAllData {
 }
 
 /**
+ * Session ID widget data
+ */
+export interface SessionIdData {
+  sessionId: string;
+  shortId: string;
+}
+
+/**
  * z.ai/ZHIPU usage widget data
  */
 export interface ZaiUsageData {
@@ -393,6 +403,7 @@ export type WidgetData =
   | ProjectInfoData
   | ConfigCountsData
   | SessionDurationData
+  | SessionIdData
   | ToolActivityData
   | AgentStatusData
   | TodoProgressData
