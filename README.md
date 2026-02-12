@@ -34,7 +34,7 @@ git clone https://github.com/uppinote20/claude-dashboard.git ~/.claude/plugins/c
 
 ![Compact](images/compact.png)
 
-> Model, context progress bar, cost, rate limits (5h/7d/7d-Sonnet), z.ai usage
+> Model, context progress bar, cost, rate limits (5h/7d/7d-Sonnet) or z.ai usage (mutually exclusive by provider)
 
 **Normal (2 lines):**
 
@@ -46,7 +46,7 @@ git clone https://github.com/uppinote20/claude-dashboard.git ~/.claude/plugins/c
 
 ![Detailed](images/detailed.png)
 
-> Adds depletion time, config counts, tool activity, agent status, cache hit, multi-CLI usage
+> Adds depletion time, config counts, tool activity, agent status, cache hit, Codex/Gemini usage
 
 Multi-provider support: z.ai/ZHIPU, Codex, Gemini auto-detected when installed.
 
