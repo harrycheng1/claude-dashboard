@@ -1,12 +1,12 @@
 /**
- * Project info widget - displays directory name and git branch
+ * Project info widget - displays directory name, git branch, and ahead/behind status
  */
 
 import { execFileSync } from 'child_process';
 import { basename } from 'path';
 import type { Widget } from './base.js';
 import type { WidgetContext, ProjectInfoData } from '../types.js';
-import { COLORS, RESET, colorize } from '../utils/colors.js';
+import { colorize, getTheme } from '../utils/colors.js';
 
 /**
  * Get current git branch with timeout
@@ -43,6 +43,36 @@ function isGitDirty(cwd: string): boolean {
   }
 }
 
+/**
+ * Get ahead/behind counts relative to upstream
+ * Returns { ahead, behind } or null if no upstream
+ */
+function getAheadBehind(cwd: string): { ahead: number; behind: number } | null {
+  try {
+    const result = execFileSync(
+      'git',
+      ['--no-optional-locks', 'rev-list', '--left-right', '--count', '@{u}...HEAD'],
+      {
+        cwd,
+        encoding: 'utf-8',
+        timeout: 500,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }
+    );
+    const parts = result.trim().split(/\s+/);
+    if (parts.length === 2) {
+      return {
+        behind: parseInt(parts[0], 10) || 0,
+        ahead: parseInt(parts[1], 10) || 0,
+      };
+    }
+    return null;
+  } catch {
+    // No upstream configured or git error
+    return null;
+  }
+}
+
 export const projectInfoWidget: Widget<ProjectInfoData> = {
   id: 'projectInfo',
   name: 'Project Info',
@@ -58,26 +88,48 @@ export const projectInfoWidget: Widget<ProjectInfoData> = {
 
     // Add * suffix if there are uncommitted changes
     let gitBranch: string | undefined;
+    let ahead: number | undefined;
+    let behind: number | undefined;
+
     if (branch) {
       const dirty = isGitDirty(currentDir);
       gitBranch = dirty ? `${branch}*` : branch;
+
+      const ab = getAheadBehind(currentDir);
+      if (ab) {
+        ahead = ab.ahead;
+        behind = ab.behind;
+      }
     }
 
     return {
       dirName,
       gitBranch,
+      ahead,
+      behind,
     };
   },
 
   render(data: ProjectInfoData): string {
+    const theme = getTheme();
     const parts: string[] = [];
 
-    // Directory name with folder icon (pastel yellow - soft cream color)
-    parts.push(colorize(`📁 ${data.dirName}`, COLORS.pastelYellow));
+    // Directory name with folder icon
+    parts.push(colorize(`📁 ${data.dirName}`, theme.folder));
 
-    // Git branch in parentheses (pastel pink)
+    // Git branch in parentheses with ahead/behind indicators
     if (data.gitBranch) {
-      parts.push(colorize(`(${data.gitBranch})`, COLORS.pastelPink));
+      let branchStr = data.gitBranch;
+
+      const aheadStr = (data.ahead ?? 0) > 0 ? `↑${data.ahead}` : '';
+      const behindStr = (data.behind ?? 0) > 0 ? `↓${data.behind}` : '';
+      const indicators = `${aheadStr}${behindStr}`;
+
+      if (indicators) {
+        branchStr += ` ${indicators}`;
+      }
+
+      parts.push(colorize(`(${branchStr})`, theme.branch));
     }
 
     return parts.join(' ');
