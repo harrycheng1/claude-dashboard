@@ -897,48 +897,41 @@ var rateLimit7dSonnetWidget = {
 };
 
 // scripts/widgets/project-info.ts
-import { execFileSync as execFileSync2 } from "child_process";
+import { execFile } from "child_process";
 import { basename } from "path";
-function getGitBranch(cwd) {
-  try {
-    const result = execFileSync2("git", ["--no-optional-locks", "rev-parse", "--abbrev-ref", "HEAD"], {
+function execGit(args, cwd, timeout) {
+  return new Promise((resolve, reject) => {
+    execFile("git", ["--no-optional-locks", ...args], {
       cwd,
       encoding: "utf-8",
-      timeout: 500,
-      // 500ms timeout to prevent blocking
-      stdio: ["pipe", "pipe", "pipe"]
+      timeout
+    }, (error, stdout) => {
+      if (error)
+        reject(error);
+      else
+        resolve(stdout);
     });
+  });
+}
+async function getGitBranch(cwd) {
+  try {
+    const result = await execGit(["rev-parse", "--abbrev-ref", "HEAD"], cwd, 500);
     return result.trim() || void 0;
   } catch {
     return void 0;
   }
 }
-function isGitDirty(cwd) {
+async function isGitDirty(cwd) {
   try {
-    const result = execFileSync2("git", ["--no-optional-locks", "status", "--porcelain"], {
-      cwd,
-      encoding: "utf-8",
-      timeout: 1e3,
-      // 1s timeout
-      stdio: ["pipe", "pipe", "pipe"]
-    });
+    const result = await execGit(["status", "--porcelain"], cwd, 1e3);
     return result.trim().length > 0;
   } catch {
     return false;
   }
 }
-function getAheadBehind(cwd) {
+async function getAheadBehind(cwd) {
   try {
-    const result = execFileSync2(
-      "git",
-      ["--no-optional-locks", "rev-list", "--left-right", "--count", "@{u}...HEAD"],
-      {
-        cwd,
-        encoding: "utf-8",
-        timeout: 500,
-        stdio: ["pipe", "pipe", "pipe"]
-      }
-    );
+    const result = await execGit(["rev-list", "--left-right", "--count", "@{u}...HEAD"], cwd, 500);
     const parts = result.trim().split(/\s+/);
     if (parts.length === 2) {
       return {
@@ -960,14 +953,16 @@ var projectInfoWidget = {
       return null;
     }
     const dirName = basename(currentDir);
-    const branch = getGitBranch(currentDir);
+    const [branch, dirty, ab] = await Promise.all([
+      getGitBranch(currentDir),
+      isGitDirty(currentDir),
+      getAheadBehind(currentDir)
+    ]);
     let gitBranch;
     let ahead;
     let behind;
     if (branch) {
-      const dirty = isGitDirty(currentDir);
       gitBranch = dirty ? `${branch}*` : branch;
-      const ab = getAheadBehind(currentDir);
       if (ab) {
         ahead = ab.ahead;
         behind = ab.behind;
@@ -1583,7 +1578,7 @@ var cacheHitWidget = {
 
 // scripts/utils/codex-client.ts
 import { readFile as readFile5, stat as stat6, writeFile as writeFile2, mkdir as mkdir3 } from "fs/promises";
-import { execFileSync as execFileSync3 } from "child_process";
+import { execFileSync as execFileSync2 } from "child_process";
 import os2 from "os";
 import path2 from "path";
 var API_TIMEOUT_MS2 = 5e3;
@@ -1669,7 +1664,7 @@ async function saveModelCache(model, configMtime) {
 function detectModelFromCodexExec() {
   try {
     debugLog("codex", "detectModelFromCodexExec: running codex exec...");
-    const output = execFileSync3("codex", ["exec", "1+1="], {
+    const output = execFileSync2("codex", ["exec", "1+1="], {
       encoding: "utf-8",
       timeout: 1e4,
       stdio: ["pipe", "pipe", "pipe"]
@@ -1847,7 +1842,7 @@ var codexUsageWidget = {
 
 // scripts/utils/gemini-client.ts
 import { readFile as readFile6, writeFile as writeFile3, stat as stat7 } from "fs/promises";
-import { execFileSync as execFileSync4 } from "child_process";
+import { execFileSync as execFileSync3 } from "child_process";
 import os3 from "os";
 import path3 from "path";
 var API_TIMEOUT_MS3 = 5e3;
@@ -1888,7 +1883,7 @@ async function getTokenFromKeychain() {
     return null;
   }
   try {
-    const result = execFileSync4(
+    const result = execFileSync3(
       "security",
       ["find-generic-password", "-s", KEYCHAIN_SERVICE_NAME, "-a", MAIN_ACCOUNT_KEY, "-w"],
       { encoding: "utf-8", timeout: 3e3, stdio: ["pipe", "pipe", "pipe"] }
