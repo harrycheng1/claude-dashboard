@@ -67,25 +67,21 @@ Configure the claude-dashboard status line plugin with widget system support.
 
 **If no arguments provided (interactive mode):**
 
-Use AskUserQuestion to ask the user:
+Use AskUserQuestion to ask the user. Batch independent questions into a single AskUserQuestion call (max 4 per call) to minimize back-and-forth.
 
-1. First question: Display mode selection
-   - Options: compact (recommended), normal, detailed, custom
+**Turn 1** — Ask all 3 questions in a single AskUserQuestion call:
+1. Display mode: compact (recommended), normal, detailed, custom
+2. Theme: default (recommended), minimal, catppuccin, dracula, gruvbox
+3. Hide widgets?: No (recommended), Yes
 
-2. If "custom" selected, ask for each line:
-   - Line 1 widgets (multi-select from available widgets)
-   - Ask if they want to add Line 2
-   - If yes, Line 2 widgets (multi-select)
-   - Ask if they want to add Line 3
-   - Continue until they say no (no line limit)
-
-3. Theme selection
-   - Options: default (recommended), minimal, catppuccin, dracula, gruvbox
-
-4. Use AskUserQuestion to ask: "Do you want to hide any widgets?"
-   - Options: "No" (recommended), "Yes"
-   - If "Yes": use AskUserQuestion with multiSelect to let user pick widgets to hide from the available widgets list
-   - Set selected widgets in `"disabledWidgets"` array of config
+**Turn 2** — Conditional follow-ups (only if needed):
+- If display mode = "custom": ask for each line's widgets
+  - Line 1 widgets (multi-select from available widgets)
+  - Ask if they want to add Line 2
+  - If yes, Line 2 widgets (multi-select)
+  - Continue until they say no (no line limit)
+- If hide widgets = "Yes": ask which widgets to hide (multi-select from available widgets)
+- If both are needed, ask them together in a single AskUserQuestion call
 
 **If arguments provided (direct mode):**
 
