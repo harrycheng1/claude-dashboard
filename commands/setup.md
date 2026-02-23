@@ -67,25 +67,21 @@ Configure the claude-dashboard status line plugin with widget system support.
 
 **If no arguments provided (interactive mode):**
 
-Use AskUserQuestion to ask the user:
+Use AskUserQuestion to ask the user. Batch independent questions into a single AskUserQuestion call (max 4 per call) to minimize back-and-forth.
 
-1. First question: Display mode selection
-   - Options: compact (recommended), normal, detailed, custom
+**Turn 1** — Ask all 3 questions in a single AskUserQuestion call:
+1. Display mode: compact (recommended), normal, detailed, custom
+2. Theme: default (recommended), minimal, catppuccin, dracula, gruvbox
+3. Hide widgets?: No (recommended), Yes
 
-2. If "custom" selected, ask for each line:
-   - Line 1 widgets (multi-select from available widgets)
-   - Ask if they want to add Line 2
-   - If yes, Line 2 widgets (multi-select)
-   - Ask if they want to add Line 3
-   - Continue until they say no (no line limit)
-
-3. Theme selection
-   - Options: default (recommended), minimal, catppuccin, dracula, gruvbox
-
-4. Disabled widgets (optional)
-   - Ask if they want to hide any widgets
-   - If yes, multi-select from available widgets
-   - Selected widgets will be added to `disabledWidgets` array
+**Turn 2** — Conditional follow-ups (only if needed):
+- If display mode = "custom": ask for each line's widgets
+  - Line 1 widgets (multi-select from available widgets)
+  - Ask if they want to add Line 2
+  - If yes, Line 2 widgets (multi-select)
+  - Continue until they say no (no line limit)
+- If hide widgets = "Yes": ask which widgets to hide (multi-select from available widgets)
+- If both are needed, ask them together in a single AskUserQuestion call
 
 **If arguments provided (direct mode):**
 
@@ -101,7 +97,8 @@ Create `~/.claude/claude-dashboard.local.json`:
   "language": "$2 or auto",
   "plan": "$3 or max",
   "displayMode": "$1 or normal",
-  "theme": "default",
+  "theme": "selected theme or default",
+  "disabledWidgets": ["selected widgets to hide, omit if empty"],
   "cache": {
     "ttlSeconds": 60
   }
@@ -118,17 +115,15 @@ Create `~/.claude/claude-dashboard.local.json`:
     ["widget1", "widget2"],
     ["widget3", "widget4"]
   ],
-  "theme": "default",
+  "theme": "selected theme or default",
+  "disabledWidgets": ["selected widgets to hide, omit if empty"],
   "cache": {
     "ttlSeconds": 60
   }
 }
 ```
 
-### Optional Config Fields
-
-- `"theme"`: Color theme — `"default"` | `"minimal"` | `"catppuccin"` | `"dracula"` | `"gruvbox"`
-- `"disabledWidgets"`: Array of widget IDs to hide — e.g. `["codexUsage", "cacheHit"]`
+**Note**: Omit `"disabledWidgets"` field entirely if user chose not to hide any widgets.
 
 ### 3. Update settings.json
 
