@@ -1,7 +1,7 @@
 ---
 description: Configure claude-dashboard status line settings
 argument-hint: "[displayMode] [language] [plan] | custom \"widgets\""
-allowed-tools: Read, Write, Bash(jq:*), Bash(cat:*), Bash(mkdir:*), Bash(node:*), Bash(echo:*), AskUserQuestion
+allowed-tools: Read, Write, Bash(jq:*), Bash(cat:*), Bash(mkdir:*), AskUserQuestion
 ---
 
 # Claude Dashboard Setup
@@ -79,20 +79,8 @@ Use AskUserQuestion to ask the user:
    - Ask if they want to add Line 3
    - Continue until they say no (no line limit)
 
-3. Use AskUserQuestion to ask: Theme selection
-   - Options with color descriptions:
-     - `default` (recommended): Pastel colors — cyan, yellow, pink, green
-     - `minimal`: Monochrome — white + gray
-     - `catppuccin`: Catppuccin Mocha — lavender, green, pink, peach
-     - `dracula`: Dracula — purple, green, pink, orange
-     - `gruvbox`: Gruvbox — yellow, green, orange, aqua
-   - After the user selects a theme, show a live preview by running the status line with that theme:
-     ```bash
-     # Temporarily set theme in config, run status line, then restore
-     PLUGIN_PATH=$(ls -d ~/.claude/plugins/cache/claude-dashboard/claude-dashboard/*/dist/index.js 2>/dev/null | sort -V | tail -1)
-     echo '{"model":{"display_name":"Claude Opus 4","id":"claude-opus-4-6"},"workspace":{"current_dir":"'$(pwd)'"},"context":{"used_tokens":160000,"remaining_tokens":40000,"total_tokens":200000},"session":{"cost_usd":1.25,"id":"preview"}}' | node "$PLUGIN_PATH"
-     ```
-   - Show the preview output and ask if the user wants to keep this theme or pick another
+3. Theme selection
+   - Options: default (recommended), minimal, catppuccin, dracula, gruvbox
 
 4. Use AskUserQuestion to ask: "Do you want to hide any widgets?"
    - Options: "No" (recommended), "Yes"
